@@ -3,144 +3,16 @@ name: Atreias-WLAN
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */8 * * *'
+    - cron: "0 */8 * * *"
 
 jobs:
   runa:
-    name: Kuratorin Runa
-
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa untersucht die AION-2-Konfiguration
+      - name: Discord-Verbindung testen
         run: |
-          echo "📡 Kuratorin Runa ist auf Empfang."
-          echo "🔎 Ich untersuche jetzt direkt die AION-2-Seite."
-          echo ""
-
-          URL="https://aion2.plaync.com/ko-kr/conts/260614_update"
-
-          curl -L --fail --silent --show-error \
-            "$URL" \
-            -o aion2.html
-
-          echo "✅ AION-2-Seite geladen."
-          echo ""
-
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          data = Path("aion2.html").read_text(
-              encoding="utf-8",
-              errors="ignore"
-          )
-
-          print("=" * 80)
-          print("🔎 AION-2: MÖGLICHE SITE-WERTE")
-          print("=" * 80)
-
-          patterns = [
-              r'["\']site["\']\s*[:=]\s*["\']([^"\']+)',
-              r'["\']siteId["\']\s*[:=]\s*["\']([^"\']+)',
-              r'["\']siteCode["\']\s*[:=]\s*["\']([^"\']+)',
-              r'\.site\s*=\s*["\']([^"\']+)',
-              r'\.site\s*:\s*["\']([^"\']+)'
-          ]
-
-          found = set()
-
-          for pattern in patterns:
-              for match in re.findall(pattern, data, re.IGNORECASE):
-                  found.add(match)
-
-          if found:
-              for value in sorted(found):
-                  print(f"➡️ möglicher Wert: {value}")
-          else:
-              print("❌ Kein direkter site-Wert gefunden.")
-
-          print("")
-          print("=" * 80)
-          print("🔎 AION-2: PLAYNC-API-VERWEISE")
-          print("=" * 80)
-
-          for match in sorted(set(
-              re.findall(
-                  r'https?://[^"\'\s<>]+',
-                  data
-              )
-          )):
-              if any(x in match.lower() for x in [
-                  "api-search",
-                  "plaync.com/api",
-                  "api.plaync"
-              ]):
-                  print(match)
-
-          print("")
-          print("=" * 80)
-          print("🔎 AION-2: KONFIGURATIONSBEGRIFFE")
-          print("=" * 80)
-
-          needles = [
-              "api-search.plaync.com",
-              "useAPIListUrl",
-              "boardAlias",
-              "site",
-              "country",
-              "lang"
-          ]
-
-          for needle in needles:
-              print("")
-              print(f"----- {needle} -----")
-
-              positions = []
-              start = 0
-
-              while True:
-                  pos = data.lower().find(needle.lower(), start)
-
-                  if pos == -1:
-                      break
-
-                  positions.append(pos)
-                  start = pos + len(needle)
-
-                  if len(positions) >= 5:
-                      break
-
-              if not positions:
-                  print("❌ nicht gefunden")
-                  continue
-
-              for number, pos in enumerate(positions, 1):
-                  left = max(0, pos - 700)
-                  right = min(len(data), pos + len(needle) + 1000)
-
-                  print("")
-                  print(f"Fundstelle {number}:")
-                  print(data[left:right])
-
-          print("")
-          print("=" * 80)
-          print("🔎 AION-2: SCRIPT-DATEIEN")
-          print("=" * 80)
-
-          scripts = sorted(set(
-              re.findall(
-                  r'<script[^>]+src=["\']([^"\']+)',
-                  data,
-                  re.IGNORECASE
-              )
-          ))
-
-          for script in scripts:
-              print(script)
-
-          print("")
-          print("=" * 80)
-          print("✅ AION-2-Untersuchung abgeschlossen.")
-          print("=" * 80)
-          PY
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"content":"📡 Atreias-WLAN ist verbunden. Runa empfängt das Signal aus Atreia. 🌿"}' \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
