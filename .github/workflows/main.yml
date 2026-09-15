@@ -6,7 +6,9 @@ on:
     - cron: '0 */8 * * *'
 
 jobs:
-  test:
+  runa:
+    name: Kuratorin Runa
+
     runs-on: ubuntu-latest
 
     steps:
@@ -24,24 +26,50 @@ jobs:
           echo "✅ createBoard.js geladen."
           echo ""
 
-          echo "🔎 Stellen mit api-search.plaync.com:"
-          grep -oiFn "api-search.plaync.com" createBoard.js || true
+          python - <<'PY'
+          from pathlib import Path
 
-          echo ""
-          echo "🔎 Stellen mit articleId:"
-          grep -in "articleId" createBoard.js | head -n 20 || true
+          data = Path("createBoard.js").read_text(
+              encoding="utf-8",
+              errors="ignore"
+          )
 
-          echo ""
-          echo "🔎 Ausschnitte rund um api-search.plaync.com:"
-          while read -r line; do
-            start=$((line - 8))
-            [ "$start" -lt 1 ] && start=1
-            end=$((line + 8))
+          needles = [
+              "api-search.plaync.com",
+              "articleId"
+          ]
 
-            echo ""
-            echo "----- Zeilen $start bis $end -----"
-            sed -n "${start},${end}p" createBoard.js
-          done < <(grep -in "api-search.plaync.com" createBoard.js | cut -d: -f1)
+          for needle in needles:
+              print("")
+              print(f"🔎 Fundstellen für: {needle}")
 
-          echo ""
-          echo "✅ Runa hat den technischen Nachrichtenweg untersucht."
+              start = 0
+              count = 0
+
+              while True:
+                  pos = data.lower().find(needle.lower(), start)
+
+                  if pos == -1:
+                      break
+
+                  count += 1
+
+                  left = max(0, pos - 800)
+                  right = min(len(data), pos + len(needle) + 1200)
+
+                  print("")
+                  print(f"----- Fundstelle {count} -----")
+                  print(data[left:right])
+                  print("----- Ende -----")
+
+                  start = pos + len(needle)
+
+                  if count >= 5:
+                      break
+
+              if count == 0:
+                  print("Keine Fundstelle gefunden.")
+
+          print("")
+          print("✅ Untersuchung abgeschlossen.")
+          PY
