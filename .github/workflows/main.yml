@@ -10,65 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa untersucht den Nachrichtenweg
+      - name: Runa untersucht den echten Nachrichtenabruf
         run: |
           echo "📡 Kuratorin Runa ist auf Empfang."
-          echo "🔎 Ich untersuche jetzt, woher die offiziellen Meldungen kommen."
+          echo "🔎 Ich suche jetzt gezielt nach dem Nachrichten-API."
+
+          URL="https://assets.playnccdn.com/uikit/uikit-nccommunity/2.3.8/js/createBoard.js"
 
           curl -L --fail --silent --show-error \
-            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
-            -o announcements.html
+            "$URL" \
+            -o createBoard.js
 
-          echo "✅ Offizielle Seite erreicht."
+          echo "✅ createBoard.js geladen."
+          echo ""
+
+          echo "🔎 Stellen mit api-search.plaync.com:"
+          grep -oiFn "api-search.plaync.com" createBoard.js || true
 
           echo ""
-          echo "📄 Eingebundene JavaScript-Dateien:"
-
-          grep -oiE '<script[^>]+src="[^"]+"' announcements.html \
-            | sed -E 's/.*src="([^"]+)".*/\1/' \
-            | sort -u > scripts.txt
-
-          cat scripts.txt
-
-          mkdir -p runa-data/js
+          echo "🔎 Stellen mit articleId:"
+          grep -in "articleId" createBoard.js | head -n 20 || true
 
           echo ""
-          echo "🔎 Untersuche JavaScript-Dateien nach möglichen Nachrichten-Schnittstellen..."
-
-          while IFS= read -r src; do
-            [ -z "$src" ] && continue
-
-            case "$src" in
-              http*)
-                url="$src"
-                ;;
-              /*)
-                url="https://aion2.plaync.com$src"
-                ;;
-              *)
-                url="https://aion2.plaync.com/$src"
-                ;;
-            esac
-
-            filename=$(printf '%s' "$src" | md5sum | cut -d' ' -f1)
+          echo "🔎 Ausschnitte rund um api-search.plaync.com:"
+          while read -r line; do
+            start=$((line - 8))
+            [ "$start" -lt 1 ] && start=1
+            end=$((line + 8))
 
             echo ""
-            echo "➡️ $url"
-
-            curl -L --fail --silent --show-error \
-              "$url" \
-              -o "runa-data/js/$filename.js" || {
-                echo "⚠️ Datei konnte nicht geladen werden."
-                continue
-              }
-
-            grep -oiE \
-              'https?://[^"'\'' ]+|/api/[A-Za-z0-9_./?=&${}-]+|graphql|articleId|board/notice' \
-              "runa-data/js/$filename.js" \
-              | head -n 50 \
-              || true
-
-          done < scripts.txt
+            echo "----- Zeilen $start bis $end -----"
+            sed -n "${start},${end}p" createBoard.js
+          done < <(grep -in "api-search.plaync.com" createBoard.js | cut -d: -f1)
 
           echo ""
-          echo "✅ Untersuchung abgeschlossen."
+          echo "✅ Runa hat den technischen Nachrichtenweg untersucht."
