@@ -15,7 +15,8 @@ jobs:
       - name: Runa untersucht den echten Nachrichtenabruf
         run: |
           echo "📡 Kuratorin Runa ist auf Empfang."
-          echo "🔎 Ich suche jetzt gezielt nach dem Nachrichten-API."
+          echo "🔎 Ich untersuche jetzt gezielt den Nachrichten-API-Aufbau."
+          echo ""
 
           URL="https://assets.playnccdn.com/uikit/uikit-nccommunity/2.3.8/js/createBoard.js"
 
@@ -36,12 +37,16 @@ jobs:
 
           needles = [
               "api-search.plaync.com",
+              "useAPIListUrl",
+              "boardAlias",
               "articleId"
           ]
 
           for needle in needles:
               print("")
-              print(f"🔎 Fundstellen für: {needle}")
+              print("=" * 80)
+              print(f"🔎 FUNDSTELLEN FÜR: {needle}")
+              print("=" * 80)
 
               start = 0
               count = 0
@@ -54,8 +59,8 @@ jobs:
 
                   count += 1
 
-                  left = max(0, pos - 800)
-                  right = min(len(data), pos + len(needle) + 1200)
+                  left = max(0, pos - 1200)
+                  right = min(len(data), pos + len(needle) + 1800)
 
                   print("")
                   print(f"----- Fundstelle {count} -----")
@@ -64,11 +69,60 @@ jobs:
 
                   start = pos + len(needle)
 
-                  if count >= 5:
+                  if count >= 8:
+                      print("")
+                      print("⚠️ Weitere Fundstellen werden hier nicht mehr ausgegeben.")
                       break
 
               if count == 0:
-                  print("Keine Fundstelle gefunden.")
+                  print("❌ Keine Fundstelle gefunden.")
+
+          print("")
+          print("=" * 80)
+          print("🔎 ZUSÄTZLICHE SUCHE NACH API-URLS")
+          print("=" * 80)
+
+          import re
+
+          urls = sorted(set(
+              re.findall(
+                  r'https?://[^"\'\s]+',
+                  data
+              )
+          ))
+
+          for url in urls:
+              if "plaync.com" in url.lower():
+                  print(url)
+
+          print("")
+          print("=" * 80)
+          print("🔎 SUCHE NACH MÖGLICHEN SITE-WERTEN")
+          print("=" * 80)
+
+          patterns = [
+              r'["\']site["\']\s*[:=]\s*["\']([^"\']+)',
+              r'site\s*[:=]\s*["\']([^"\']+)',
+              r'site\s*=\s*["\']([^"\']+)'
+          ]
+
+          found_sites = set()
+
+          for pattern in patterns:
+              for match in re.findall(pattern, data, re.IGNORECASE):
+                  found_sites.add(match)
+
+          if found_sites:
+              for site in sorted(found_sites):
+                  print(f"➡️ möglicher site-Wert: {site}")
+          else:
+              print("❌ Kein direkter site-Wert gefunden.")
+
+          print("")
+          print("=" * 80)
+          print("✅ Untersuchung abgeschlossen.")
+          print("=" * 80)
+          PY
 
           print("")
           print("✅ Untersuchung abgeschlossen.")
