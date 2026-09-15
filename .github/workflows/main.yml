@@ -39,7 +39,7 @@ jobs:
           echo "✅ Runa hat die aktuellen Inhalte erfasst."
 
       - name: Runa prüft, was sie schon kennt
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: runa-data/seen.txt
           key: runa-seen-${{ github.run_id }}
