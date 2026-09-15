@@ -10,207 +10,65 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa holt die offiziellen AION-2-Ankündigungen
+      - name: Runa untersucht den Nachrichtenweg
         run: |
           echo "📡 Kuratorin Runa ist auf Empfang."
-          echo "🔎 Ich suche nach Neuigkeiten, die für unseren Hain interessant sein könnten."
+          echo "🔎 Ich untersuche jetzt, woher die offiziellen Meldungen kommen."
 
           curl -L --fail --silent --show-error \
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o announcements.html
 
-          echo "✅ Offizielle Ankündigungsseite erreicht."
-
-      - name: Runa prüft ihren bisherigen Empfangsspeicher
-        uses: actions/cache@v5
-        with:
-          path: runa-data/seen.txt
-          key: runa-seen-${{ github.run_id }}
-          restore-keys: |
-            runa-seen-
-
-      - name: Runa sucht interessante Meldungen
-        run: |
-          mkdir -p runa-data
-          touch runa-data/seen.txt
-
-          python - <<'PY'
-          from html.parser import HTMLParser
-          from urllib.parse import urljoin
-          import re
-
-          SOURCE = "https://aion2.plaync.com/en-us/board/notice/list?redirect=false"
-
-          IMPORTANT = [
-              "launch",
-              "release",
-              "maintenance",
-              "update",
-              "patch",
-              "test",
-              "scale test",
-              "server",
-              "schedule",
-              "roadmap",
-              "event",
-              "reward",
-              "class",
-              "skill",
-              "balance",
-              "content",
-              "feature",
-              "system",
-              "dungeon",
-              "instance",
-              "zone",
-              "area",
-              "region",
-              "season",
-              "announcement",
-              "notice",
-              "opening",
-              "closed",
-              "access",
-              "pre-download"
-          ]
-
-          UNIMPORTANT = [
-              "founder's pack",
-              "founder pack",
-              "deluxe founder",
-              "ultimate founder",
-              "shop",
-              "store",
-              "purchase",
-              "merch",
-              "bundle",
-              "sale",
-              "price"
-          ]
-
-          class LinkParser(HTMLParser):
-              def __init__(self):
-                  super().__init__()
-                  self.links = []
-                  self.href = None
-                  self.text_parts = []
-
-              def handle_starttag(self, tag, attrs):
-                  if tag.lower() == "a":
-                      values = dict(attrs)
-                      href = values.get("href")
-
-                      if href:
-                          self.href = urljoin(SOURCE, href)
-                          self.text_parts = []
-
-              def handle_data(self, data):
-                  if self.href:
-                      self.text_parts.append(data)
-
-              def handle_endtag(self, tag):
-                  if tag.lower() == "a" and self.href:
-                      text = " ".join(" ".join(self.text_parts).split())
-
-                      if text:
-                          self.links.append((text, self.href))
-
-                      self.href = None
-                      self.text_parts = []
-
-          with open("announcements.html", "r", encoding="utf-8", errors="ignore") as f:
-              html = f.read()
-
-          parser = LinkParser()
-          parser.feed(html)
-
-          candidates = []
-          seen_urls = set()
-
-          for text, url in parser.links:
-              if url in seen_urls:
-                  continue
-
-              if "aion2.plaync.com" not in url:
-                  continue
-
-              low_text = text.lower()
-              low_url = url.lower()
-
-              # Nur echte Meldungs-/Ankündigungslinks berücksichtigen.
-              if "/board/notice/" not in low_url:
-                  continue
-
-              if url.rstrip("/") == SOURCE.rstrip("/"):
-                  continue
-
-              seen_urls.add(url)
-
-              important_score = sum(
-                  1 for word in IMPORTANT
-                  if word in low_text
-              )
-
-              unimportant_score = sum(
-                  1 for word in UNIMPORTANT
-                  if word in low_text
-              )
-
-              if important_score > 0 and unimportant_score == 0:
-                  candidates.append(
-                      (important_score, text, url)
-                  )
-
-          candidates.sort(
-              key=lambda item: (-item[0], item[1].lower())
-          )
-
-          with open("runa-data/current.txt", "w", encoding="utf-8") as out:
-              for score, text, url in candidates[:20]:
-                  out.write(f"{text}|{url}\n")
-
-          print("")
-          print(
-              f"📡 Runa hat {len(candidates)} mögliche interessante Meldungen gefunden."
-          )
-
-          if not candidates:
-              print(
-                  "📡 Heute war nichts dabei, das nach unserem Filter wichtig genug aussieht."
-              )
-
-          print("")
-          print("🔎 Mögliche Treffer:")
-
-          for score, text, url in candidates[:20]:
-              print(f"- {text}")
-              print(f"  {url}")
-
-          PY
-
-      - name: Runa vergleicht neue und bekannte Inhalte
-        run: |
-          touch runa-data/seen.txt
+          echo "✅ Offizielle Seite erreicht."
 
           echo ""
-          echo "🧠 Runa prüft ihren bisherigen Empfangsspeicher."
+          echo "📄 Eingebundene JavaScript-Dateien:"
 
-          comm -23 \
-            <(sort -u runa-data/current.txt) \
-            <(sort -u runa-data/seen.txt) \
-            > runa-data/new.txt
+          grep -oiE '<script[^>]+src="[^"]+"' announcements.html \
+            | sed -E 's/.*src="([^"]+)".*/\1/' \
+            | sort -u > scripts.txt
 
-          if [ -s runa-data/new.txt ]; then
-            echo ""
-            echo "🆕 Runa hat neue interessante Inhalte gefunden:"
-            cat runa-data/new.txt
-          else
-            echo ""
-            echo "📡 Keine neuen interessanten Inhalte seit dem letzten Empfang."
-          fi
+          cat scripts.txt
 
-          cat runa-data/current.txt >> runa-data/seen.txt
-          sort -u runa-data/seen.txt -o runa-data/seen.txt
+          mkdir -p runa-data/js
 
           echo ""
-          echo "✅ Empfangsspeicher aktualisiert."
+          echo "🔎 Untersuche JavaScript-Dateien nach möglichen Nachrichten-Schnittstellen..."
+
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+
+            case "$src" in
+              http*)
+                url="$src"
+                ;;
+              /*)
+                url="https://aion2.plaync.com$src"
+                ;;
+              *)
+                url="https://aion2.plaync.com/$src"
+                ;;
+            esac
+
+            filename=$(printf '%s' "$src" | md5sum | cut -d' ' -f1)
+
+            echo ""
+            echo "➡️ $url"
+
+            curl -L --fail --silent --show-error \
+              "$url" \
+              -o "runa-data/js/$filename.js" || {
+                echo "⚠️ Datei konnte nicht geladen werden."
+                continue
+              }
+
+            grep -oiE \
+              'https?://[^"'\'' ]+|/api/[A-Za-z0-9_./?=&${}-]+|graphql|articleId|board/notice' \
+              "runa-data/js/$filename.js" \
+              | head -n 50 \
+              || true
+
+          done < scripts.txt
+
+          echo ""
+          echo "✅ Untersuchung abgeschlossen."
