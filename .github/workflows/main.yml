@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa prüft die offizielle AION-2-Seite
+      - name: Runa holt die offizielle AION-2-Seite
         run: |
           echo "📡 Runa ist auf Empfang."
           echo "🔎 Ich schaue nach neuen Informationen aus Atreia."
@@ -19,16 +19,56 @@ jobs:
             "https://aion2.ncsoft.jp/en/contents" \
             -o aion2.html
 
-          echo ""
           echo "✅ Offizielle Seite erreicht."
-          echo ""
 
-          echo "📄 Seitentitel:"
-          grep -oi '<title[^>]*>[^<]*</title>' aion2.html | head -n 1 || true
+          mkdir -p runa-data
 
-          echo ""
-          echo "🔎 Gefundene Überschriften:"
           grep -oiE '<h1[^>]*>[^<]*</h1>|<h2[^>]*>[^<]*</h2>|<h3[^>]*>[^<]*</h3>' aion2.html \
             | sed 's/<[^>]*>//g' \
             | sed 's/&[^;]*;/ /g' \
-            | head -n 20 || true
+            | tr -s ' ' \
+            | sed 's/^ *//; s/ *$//' \
+            | grep -v '^$' \
+            | sort -u > runa-data/current.txt
+
+          echo ""
+          echo "🔎 Aktuell gefundene Inhalte:"
+          cat runa-data/current.txt
+
+          echo ""
+          echo "✅ Runa hat die aktuellen Inhalte erfasst."
+
+      - name: Runa prüft, was sie schon kennt
+        uses: actions/cache@v4
+        with:
+          path: runa-data/seen.txt
+          key: runa-seen-${{ github.run_id }}
+          restore-keys: |
+            runa-seen-
+
+      - name: Runa vergleicht neue und bekannte Inhalte
+        run: |
+          touch runa-data/seen.txt
+
+          echo ""
+          echo "🧠 Runa prüft ihren bisherigen Empfangsspeicher."
+
+          comm -23 \
+            <(sort -u runa-data/current.txt) \
+            <(sort -u runa-data/seen.txt) \
+            > runa-data/new.txt
+
+          if [ -s runa-data/new.txt ]; then
+            echo ""
+            echo "🆕 Runa hat neue Inhalte gefunden:"
+            cat runa-data/new.txt
+          else
+            echo ""
+            echo "📡 Keine neuen Inhalte seit dem letzten Empfang."
+          fi
+
+          cat runa-data/current.txt >> runa-data/seen.txt
+          sort -u runa-data/seen.txt -o runa-data/seen.txt
+
+          echo ""
+          echo "✅ Empfangsspeicher aktualisiert."
