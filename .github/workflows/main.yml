@@ -10,9 +10,63 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Discord-Verbindung testen
+      - name: AION 2 Nachrichten abrufen
         run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"content":"📡 Atreias-WLAN ist verbunden. Runa empfängt das Signal aus Atreia. 🌿"}' \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          curl -L \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://aion2.plaync.com/en-us/board/notice/list" \
+            -o aion2.html
+
+      - name: Nachricht an Discord senden
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          import os
+          import re
+          import urllib.request
+          import json
+
+          class TextParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.parts = []
+
+              def handle_data(self, data):
+                  text = data.strip()
+                  if text:
+                      self.parts.append(text)
+
+          parser = TextParser()
+
+          with open("aion2.html", "r", encoding="utf-8") as f:
+              parser.feed(f.read())
+
+          text = "\n".join(parser.parts)
+
+          lines = []
+          for line in text.splitlines():
+              line = re.sub(r"\s+", " ", line).strip()
+              if line and line not in lines:
+                  lines.append(line)
+
+          message = "\n".join(lines[:20])
+
+          if not message:
+              message = "📡 Atreias-WLAN konnte die AION-2-Newsseite erreichen, aber noch keinen Nachrichtentext auslesen."
+
+          payload = json.dumps({
+              "content": "📡 **Neue AION-2-Informationen**\n\n" + message
+          }).encode("utf-8")
+
+          req = urllib.request.Request(
+              os.environ["DISCORD_WEBHOOK_URL"],
+              data=payload,
+              headers={"Content-Type": "application/json"},
+              method="POST"
+          )
+
+          with urllib.request.urlopen(req) as response:
+              print("Discord:", response.status)
+          PY
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
