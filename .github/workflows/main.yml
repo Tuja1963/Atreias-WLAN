@@ -12,45 +12,92 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa untersucht den echten Nachrichtenabruf
+      - name: Runa untersucht die AION-2-Konfiguration
         run: |
           echo "📡 Kuratorin Runa ist auf Empfang."
-          echo "🔎 Ich untersuche jetzt gezielt den Nachrichten-API-Aufbau."
+          echo "🔎 Ich untersuche jetzt direkt die AION-2-Seite."
           echo ""
 
-          URL="https://assets.playnccdn.com/uikit/uikit-nccommunity/2.3.8/js/createBoard.js"
+          URL="https://aion2.plaync.com/ko-kr/conts/260614_update"
 
           curl -L --fail --silent --show-error \
             "$URL" \
-            -o createBoard.js
+            -o aion2.html
 
-          echo "✅ createBoard.js geladen."
+          echo "✅ AION-2-Seite geladen."
           echo ""
 
           python - <<'PY'
           from pathlib import Path
           import re
 
-          data = Path("createBoard.js").read_text(
+          data = Path("aion2.html").read_text(
               encoding="utf-8",
               errors="ignore"
           )
+
+          print("=" * 80)
+          print("🔎 AION-2: MÖGLICHE SITE-WERTE")
+          print("=" * 80)
+
+          patterns = [
+              r'["\']site["\']\s*[:=]\s*["\']([^"\']+)',
+              r'["\']siteId["\']\s*[:=]\s*["\']([^"\']+)',
+              r'["\']siteCode["\']\s*[:=]\s*["\']([^"\']+)',
+              r'\.site\s*=\s*["\']([^"\']+)',
+              r'\.site\s*:\s*["\']([^"\']+)'
+          ]
+
+          found = set()
+
+          for pattern in patterns:
+              for match in re.findall(pattern, data, re.IGNORECASE):
+                  found.add(match)
+
+          if found:
+              for value in sorted(found):
+                  print(f"➡️ möglicher Wert: {value}")
+          else:
+              print("❌ Kein direkter site-Wert gefunden.")
+
+          print("")
+          print("=" * 80)
+          print("🔎 AION-2: PLAYNC-API-VERWEISE")
+          print("=" * 80)
+
+          for match in sorted(set(
+              re.findall(
+                  r'https?://[^"\'\s<>]+',
+                  data
+              )
+          )):
+              if any(x in match.lower() for x in [
+                  "api-search",
+                  "plaync.com/api",
+                  "api.plaync"
+              ]):
+                  print(match)
+
+          print("")
+          print("=" * 80)
+          print("🔎 AION-2: KONFIGURATIONSBEGRIFFE")
+          print("=" * 80)
 
           needles = [
               "api-search.plaync.com",
               "useAPIListUrl",
               "boardAlias",
-              "articleId"
+              "site",
+              "country",
+              "lang"
           ]
 
           for needle in needles:
               print("")
-              print("=" * 80)
-              print(f"🔎 FUNDSTELLEN FÜR: {needle}")
-              print("=" * 80)
+              print(f"----- {needle} -----")
 
+              positions = []
               start = 0
-              count = 0
 
               while True:
                   pos = data.lower().find(needle.lower(), start)
@@ -58,67 +105,42 @@ jobs:
                   if pos == -1:
                       break
 
-                  count += 1
-
-                  left = max(0, pos - 1200)
-                  right = min(len(data), pos + len(needle) + 1800)
-
-                  print("")
-                  print(f"----- Fundstelle {count} -----")
-                  print(data[left:right])
-                  print("----- Ende -----")
-
+                  positions.append(pos)
                   start = pos + len(needle)
 
-                  if count >= 8:
-                      print("")
-                      print("⚠️ Weitere Fundstellen werden hier nicht mehr ausgegeben.")
+                  if len(positions) >= 5:
                       break
 
-              if count == 0:
-                  print("❌ Keine Fundstelle gefunden.")
+              if not positions:
+                  print("❌ nicht gefunden")
+                  continue
+
+              for number, pos in enumerate(positions, 1):
+                  left = max(0, pos - 700)
+                  right = min(len(data), pos + len(needle) + 1000)
+
+                  print("")
+                  print(f"Fundstelle {number}:")
+                  print(data[left:right])
 
           print("")
           print("=" * 80)
-          print("🔎 ZUSÄTZLICHE SUCHE NACH API-URLS")
+          print("🔎 AION-2: SCRIPT-DATEIEN")
           print("=" * 80)
 
-          urls = sorted(set(
+          scripts = sorted(set(
               re.findall(
-                  r'https?://[^"\'\s]+',
-                  data
+                  r'<script[^>]+src=["\']([^"\']+)',
+                  data,
+                  re.IGNORECASE
               )
           ))
 
-          for url in urls:
-              if "plaync.com" in url.lower():
-                  print(url)
+          for script in scripts:
+              print(script)
 
           print("")
           print("=" * 80)
-          print("🔎 SUCHE NACH MÖGLICHEN SITE-WERTEN")
-          print("=" * 80)
-
-          patterns = [
-              r'["\']site["\']\s*[:=]\s*["\']([^"\']+)',
-              r'site\s*[:=]\s*["\']([^"\']+)',
-              r'site\s*=\s*["\']([^"\']+)'
-          ]
-
-          found_sites = set()
-
-          for pattern in patterns:
-              for match in re.findall(pattern, data, re.IGNORECASE):
-                  found_sites.add(match)
-
-          if found_sites:
-              for site in sorted(found_sites):
-                  print(f"➡️ möglicher site-Wert: {site}")
-          else:
-              print("❌ Kein direkter site-Wert gefunden.")
-
-          print("")
-          print("=" * 80)
-          print("✅ Untersuchung abgeschlossen.")
+          print("✅ AION-2-Untersuchung abgeschlossen.")
           print("=" * 80)
           PY
