@@ -1,12 +1,14 @@
-name: Atreias-WLAN Test
+name: Atreias-WLAN
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */8 * * *'
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa sagt Hallo
-        run: echo "📡 Atreias-WLAN ist online. Runa ist auf Empfang."
+      - name: Runa ist auf Empfang
+        run: echo "📡 Runa ist auf Empfang und hält Ausschau nach etwas Interessantem aus Atreia."
