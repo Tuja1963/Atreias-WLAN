@@ -10,5 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Runa ist auf Empfang
-        run: echo "📡 Runa ist auf Empfang und hält Ausschau nach etwas Interessantem aus Atreia."
+      - name: Runa prüft die offizielle AION-2-Seite
+        run: |
+          echo "📡 Runa ist auf Empfang."
+          echo "🔎 Ich schaue kurz, was es Neues aus Atreia gibt."
+
+          curl -L --fail --silent --show-error \
+            "https://aion2.ncsoft.jp/en/contents" \
+            -o aion2.html
+
+          echo "✅ Die offizielle AION-2-Seite wurde erreicht."
+          echo "📄 Empfangene Daten:"
+          wc -c aion2.html
