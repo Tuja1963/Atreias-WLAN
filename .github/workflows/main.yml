@@ -13,12 +13,22 @@ jobs:
       - name: Runa prüft die offizielle AION-2-Seite
         run: |
           echo "📡 Runa ist auf Empfang."
-          echo "🔎 Ich schaue kurz, was es Neues aus Atreia gibt."
+          echo "🔎 Ich schaue nach neuen Informationen aus Atreia."
 
           curl -L --fail --silent --show-error \
             "https://aion2.ncsoft.jp/en/contents" \
             -o aion2.html
 
-          echo "✅ Die offizielle AION-2-Seite wurde erreicht."
-          echo "📄 Empfangene Daten:"
-          wc -c aion2.html
+          echo ""
+          echo "✅ Offizielle Seite erreicht."
+          echo ""
+
+          echo "📄 Seitentitel:"
+          grep -oi '<title[^>]*>[^<]*</title>' aion2.html | head -n 1 || true
+
+          echo ""
+          echo "🔎 Gefundene Überschriften:"
+          grep -oiE '<h1[^>]*>[^<]*</h1>|<h2[^>]*>[^<]*</h2>|<h3[^>]*>[^<]*</h3>' aion2.html \
+            | sed 's/<[^>]*>//g' \
+            | sed 's/&[^;]*;/ /g' \
+            | head -n 20 || true
