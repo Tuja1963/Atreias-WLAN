@@ -13,7 +13,7 @@ jobs:
       - name: Runa holt die offizielle AION-2-Seite
         run: |
           echo "📡 Runa ist auf Empfang."
-          echo "🔎 Ich schaue nach neuen Informationen aus Atreia."
+          echo "🔎 Ich halte Ausschau nach Dingen, die für unseren Hain interessant sein könnten."
 
           curl -L --fail --silent --show-error \
             "https://aion2.ncsoft.jp/en/contents" \
@@ -21,24 +21,7 @@ jobs:
 
           echo "✅ Offizielle Seite erreicht."
 
-          mkdir -p runa-data
-
-          grep -oiE '<h1[^>]*>[^<]*</h1>|<h2[^>]*>[^<]*</h2>|<h3[^>]*>[^<]*</h3>' aion2.html \
-            | sed 's/<[^>]*>//g' \
-            | sed 's/&[^;]*;/ /g' \
-            | tr -s ' ' \
-            | sed 's/^ *//; s/ *$//' \
-            | grep -v '^$' \
-            | sort -u > runa-data/current.txt
-
-          echo ""
-          echo "🔎 Aktuell gefundene Inhalte:"
-          cat runa-data/current.txt
-
-          echo ""
-          echo "✅ Runa hat die aktuellen Inhalte erfasst."
-
-      - name: Runa prüft, was sie schon kennt
+      - name: Runa prüft ihren bisherigen Empfangsspeicher
         uses: actions/cache@v5
         with:
           path: runa-data/seen.txt
@@ -46,25 +29,134 @@ jobs:
           restore-keys: |
             runa-seen-
 
+      - name: Runa sucht interessante Meldungen
+        run: |
+          mkdir -p runa-data
+          touch runa-data/seen.txt
+
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from urllib.parse import urljoin
+          from urllib.request import Request, urlopen
+          import re
+
+          SOURCE = "https://aion2.ncsoft.jp/en/contents"
+
+          IMPORTANT = [
+              "launch", "release", "maintenance", "update", "patch",
+              "test", "scale test", "server", "schedule", "roadmap",
+              "event", "reward", "class", "skill", "balance",
+              "content", "feature", "system", "dungeon", "instance",
+              "zone", "area", "region", "season", "reward",
+              "announcement", "notice", "opening", "closed",
+              "access", "pre-download"
+          ]
+
+          UNIMPORTANT = [
+              "founder's pack", "founder pack", "deluxe founder",
+              "ultimate founder", "shop", "store", "purchase",
+              "merch", "bundle", "sale", "price"
+          ]
+
+          class LinkParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.links = []
+                  self.current_href = None
+                  self.current_text = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() == "a":
+                      attrs = dict(attrs)
+                      href = attrs.get("href")
+                      if href:
+                          self.current_href = urljoin(SOURCE, href)
+                          self.current_text = []
+
+              def handle_data(self, data):
+                  if self.current_href:
+                      self.current_text.append(data)
+
+              def handle_endtag(self, tag):
+                  if tag.lower() == "a" and self.current_href:
+                      text = " ".join(" ".join(self.current_text).split())
+                      if text:
+                          self.links.append((text, self.current_href))
+                      self.current_href = None
+                      self.current_text = []
+
+          with open("aion2.html", "r", encoding="utf-8", errors="ignore") as f:
+              html = f.read()
+
+          parser = LinkParser()
+          parser.feed(html)
+
+          candidates = []
+          seen_urls = set()
+
+          for text, url in parser.links:
+              low = text.lower()
+
+              if url in seen_urls:
+                  continue
+
+              if "aion2.ncsoft.jp" not in url:
+                  continue
+
+              if url.rstrip("/") == SOURCE.rstrip("/"):
+                  continue
+
+              seen_urls.add(url)
+
+              important_score = sum(1 for word in IMPORTANT if word in low)
+              unimportant_score = sum(1 for word in UNIMPORTANT if word in low)
+
+              if important_score > 0 and unimportant_score == 0:
+                  candidates.append((important_score, text, url))
+
+          candidates.sort(key=lambda item: (-item[0], item[1].lower()))
+
+          with open("runa-data/candidates.txt", "w", encoding="utf-8") as out:
+              for score, text, url in candidates[:15]:
+                  out.write(f"{score}|{text}|{url}\n")
+
+          print("")
+          print("📡 Runa hat", len(candidates), "mögliche interessante Meldungen gefunden.")
+
+          if not candidates:
+              print("📡 Heute war nichts dabei, das nach unserem Filter wichtig genug aussieht.")
+
+          print("")
+          print("🔎 Mögliche Treffer:")
+
+          for score, text, url in candidates[:15]:
+              print(f"- {text}")
+              print(f"  {url}")
+
+          PY
+
       - name: Runa vergleicht neue und bekannte Inhalte
         run: |
           touch runa-data/seen.txt
+          touch runa-data/candidates.txt
+
+          sort -u runa-data/candidates.txt > runa-data/current.txt
 
           echo ""
           echo "🧠 Runa prüft ihren bisherigen Empfangsspeicher."
 
           comm -23 \
-            <(sort -u runa-data/current.txt) \
+            runa-data/current.txt \
             <(sort -u runa-data/seen.txt) \
             > runa-data/new.txt
 
           if [ -s runa-data/new.txt ]; then
             echo ""
-            echo "🆕 Runa hat neue Inhalte gefunden:"
+            echo "🆕 Runa hat neue interessante Inhalte gefunden:"
             cat runa-data/new.txt
           else
             echo ""
-            echo "📡 Keine neuen Inhalte seit dem letzten Empfang."
+            echo "📡 Keine neuen interessanten Inhalte seit dem letzten Empfang."
           fi
 
           cat runa-data/current.txt >> runa-data/seen.txt
