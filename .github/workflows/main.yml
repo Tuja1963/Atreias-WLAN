@@ -1,0 +1,12 @@
+name: Atreias-WLAN Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Runa sagt Hallo
+        run: echo "📡 Atreias-WLAN ist online. Runa ist auf Empfang."
