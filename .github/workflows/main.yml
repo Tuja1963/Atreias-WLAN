@@ -1,3 +1,5 @@
+
+  
 name: Atreias-WLAN
 
 on:
@@ -21,10 +23,10 @@ jobs:
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
-          import os
           import re
-          import urllib.request
           import json
+          import os
+          import urllib.request
 
           class TextParser(HTMLParser):
               def __init__(self):
@@ -41,31 +43,29 @@ jobs:
           with open("aion2.html", "r", encoding="utf-8") as f:
               parser.feed(f.read())
 
-          text = "\n".join(parser.parts)
-
           lines = []
-          for line in text.splitlines():
-              line = re.sub(r"\s+", " ", line).strip()
-              if line and line not in lines:
-                  lines.append(line)
+          for text in parser.parts:
+              text = re.sub(r"\s+", " ", text).strip()
+              if text and text not in lines:
+                  lines.append(text)
 
           message = "\n".join(lines[:20])
 
           if not message:
-              message = "📡 Atreias-WLAN konnte die AION-2-Newsseite erreichen, aber noch keinen Nachrichtentext auslesen."
+              message = "📡 Atreias-WLAN hat die AION-2-Seite erreicht, konnte aber noch keinen Nachrichtentext auslesen."
 
           payload = json.dumps({
               "content": "📡 **Neue AION-2-Informationen**\n\n" + message
           }).encode("utf-8")
 
-          req = urllib.request.Request(
+          request = urllib.request.Request(
               os.environ["DISCORD_WEBHOOK_URL"],
               data=payload,
               headers={"Content-Type": "application/json"},
               method="POST"
           )
 
-          with urllib.request.urlopen(req) as response:
+          with urllib.request.urlopen(request) as response:
               print("Discord:", response.status)
           PY
         env:
