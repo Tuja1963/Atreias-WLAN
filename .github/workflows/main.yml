@@ -29,6 +29,7 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
+          import re
 
           data = Path("createBoard.js").read_text(
               encoding="utf-8",
@@ -82,8 +83,6 @@ jobs:
           print("🔎 ZUSÄTZLICHE SUCHE NACH API-URLS")
           print("=" * 80)
 
-          import re
-
           urls = sorted(set(
               re.findall(
                   r'https?://[^"\'\s]+',
@@ -122,8 +121,4 @@ jobs:
           print("=" * 80)
           print("✅ Untersuchung abgeschlossen.")
           print("=" * 80)
-          PY
-
-          print("")
-          print("✅ Untersuchung abgeschlossen.")
           PY
