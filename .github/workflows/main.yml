@@ -1,4 +1,4 @@
-name: Atreias-WLAN – NC News
+name: Atreias-WLAN – NC Antenne
 
 on:
   workflow_dispatch:
@@ -8,73 +8,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle NC-News abrufen
+      - name: Offizielle AION-2-Ankündigungen abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://www.nc.com/newsroom/news/articles/?boardLanguage=en" \
+            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "Antwortgröße:"
+          echo "NC-Seite abgerufen."
           wc -c nc.html
 
-      - name: AION-2-Meldungen finden
+      - name: AION-2-Meldungen auslesen
         run: |
           python3 - <<'PY'
           import re
-          import html
+          from html import unescape
 
           with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
               page = f.read()
 
-          # Links und zugehörigen Text aus dem offiziellen Newsroom suchen
-          matches = re.findall(
-              r'href=["\']([^"\']*articleId[^"\']*)["\'][^>]*>(.*?)</a>',
+          # Artikel-IDs aus der offiziellen AION-2-Seite suchen
+          ids = re.findall(
+              r'articleId[=/:"\']+([0-9]+)',
               page,
-              re.I | re.S
+              re.I
           )
 
-          found = []
+          ids = list(dict.fromkeys(ids))
 
-          for link, title in matches:
-              title = re.sub(r"<[^>]+>", " ", title)
-              title = html.unescape(title)
-              title = re.sub(r"\s+", " ", title).strip()
+          print(f"Gefundene Artikel-IDs: {len(ids)}")
 
-              if not title:
-                  continue
-
-              if link.startswith("/"):
-                  link = "https://www.nc.com" + link
-
-              # Nur AION-2-relevante Treffer
-              text = title.lower()
-
-              if "aion" not in text:
-                  continue
-
-              found.append((title, link))
-
-          # Doppelte Links entfernen
-          unique = []
-          seen = set()
-
-          for title, link in found:
-              if link in seen:
-                  continue
-
-              seen.add(link)
-              unique.append((title, link))
-
-          if not unique:
-              echo = "Keine AION-Meldung im NC-Newsroom gefunden."
-              print(echo)
+          if not ids:
+              print("Keine Artikel-ID gefunden.")
               raise SystemExit(1)
 
-          print("Gefundene AION-Meldungen:")
+          for article_id in ids[:20]:
+              print(
+                  "https://aion2.plaync.com/en-us/board/notice/"
+                  + article_id
+              )
 
-          for title, link in unique[:10]:
-              print()
-              print("Titel:", title)
-              print("Link:", link)
+          print("NC-Antenne konnte die offiziellen Artikel erkennen.")
           PY
