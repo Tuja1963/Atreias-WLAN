@@ -16,7 +16,7 @@ jobs:
       - name: Repository laden
         uses: actions/checkout@v4
 
-      - name: Steam-AION-2-Nachrichten abrufen
+      - name: AION-2-Steam-News abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
@@ -26,39 +26,30 @@ jobs:
           echo "Antwortgröße:"
           wc -c aion2.xml
 
-      - name: Neue Meldung erkennen und Zeitung bauen
+      - name: Neue Meldungen ermitteln
         run: |
           python3 - <<'PY'
           import json
           import os
-          import re
-          import urllib.request
           import xml.etree.ElementTree as ET
-          from html import unescape
 
-          FEED = "aion2.xml"
           STATE = "aion2_seen.json"
-          PAYLOAD = "payload.json"
+          OUTPUT = "new_items.json"
 
-          # Bereits gemeldete Steam-News laden
           if os.path.exists(STATE):
               with open(STATE, "r", encoding="utf-8") as f:
                   seen = set(json.load(f))
           else:
               seen = set()
 
-          # RSS lesen
-          root = ET.parse(FEED).getroot()
+          root = ET.parse("aion2.xml").getroot()
 
-          items = root.findall(".//item")
-
-          # Neueste Meldungen zuerst
           new_items = []
 
-          for item in items:
-              title = item.findtext("title", "").strip()
-              link = item.findtext("link", "").strip()
-              guid = item.findtext("guid", "").strip()
+          for item in root.findall(".//item"):
+              title = (item.findtext("title") or "").strip()
+              link = (item.findtext("link") or "").strip()
+              guid = (item.findtext("guid") or "").strip()
 
               if not guid:
                   guid = link
@@ -75,70 +66,111 @@ jobs:
                   "guid": guid
               })
 
-          # Falls nichts Neues vorhanden ist, nichts an Discord senden
-          if not new_items:
-              print("Keine neue AION-2-Meldung.")
-              with open(PAYLOAD, "w", encoding="utf-8") as f:
-                  json.dump({"content": ""}, f, ensure_ascii=False)
+          # Älteste zuerst, damit nichts übersprungen wird
+          new_items.reverse()
 
-              raise SystemExit(0)
+          with open(OUTPUT, "w", encoding="utf-8") as f:
+              json.dump(new_items, f, ensure_ascii=False, indent=2)
 
-          # Nur die neueste Meldung veröffentlichen
-          item = new_items[0]
+          print(f"Neue Meldungen: {len(new_items)}")
+          PY
 
-          message = (
-              "📡 **Ätherstrom – AION 2**\n\n"
-              f"📰 **{item['title']}**\n\n"
-              f"🔗 {item['link']}"
-          )
+      - name: Neue Meldungen an Discord senden
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
 
-          with open(PAYLOAD, "w", encoding="utf-8") as f:
-              json.dump(
-                  {"content": message},
-                  f,
-                  ensure_ascii=False
+          with open("new_items.json", "r", encoding="utf-8") as f:
+              items = json.load(f)
+
+          if not items:
+              print("Keine neuen Meldungen.")
+              sys.exit(0)
+
+          webhook = os.environ["DISCORD_WEBHOOK_URL"]
+
+          sent = []
+
+          for item in items:
+              message = (
+                  "📡 **Ätherstrom – AION 2**\n\n"
+                  f"📰 **{item['title']}**\n\n"
+                  f"🔗 {item['link']}"
               )
 
-          # Alle jetzt gefundenen Meldungen als gesehen markieren
-          # Dadurch wird beim nächsten Lauf nichts doppelt gemeldet.
-          for entry in new_items:
-              seen.add(entry["guid"])
+              payload = json.dumps(
+                  {"content": message},
+                  ensure_ascii=False
+              ).encode("utf-8")
+
+              request = urllib.request.Request(
+                  webhook,
+                  data=payload,
+                  headers={
+                      "Content-Type": "application/json"
+                  },
+                  method="POST"
+              )
+
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      if response.status not in (200, 204):
+                          raise RuntimeError(
+                              f"Discord antwortete mit HTTP {response.status}"
+                          )
+
+                  sent.append(item["guid"])
+                  print(f"Gesendet: {item['title']}")
+
+              except Exception as e:
+                  print(f"Fehler beim Senden: {e}")
+                  print("Noch nicht gesendete Meldungen bleiben erhalten.")
+                  sys.exit(1)
+
+          with open("sent_items.json", "w", encoding="utf-8") as f:
+              json.dump(sent, f, ensure_ascii=False, indent=2)
+          PY
+
+      - name: Erfolgreich gesendete Meldungen speichern
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          STATE = "aion2_seen.json"
+
+          if os.path.exists(STATE):
+              with open(STATE, "r", encoding="utf-8") as f:
+                  seen = set(json.load(f))
+          else:
+              seen = set()
+
+          with open("sent_items.json", "r", encoding="utf-8") as f:
+              sent = json.load(f)
+
+          seen.update(sent)
 
           with open(STATE, "w", encoding="utf-8") as f:
               json.dump(sorted(seen), f, ensure_ascii=False, indent=2)
 
-          print(message)
+          print(f"Gespeicherte Meldungen: {len(seen)}")
           PY
 
-      - name: Zeitung an Discord senden
+      - name: Nachrichtenstand speichern
         run: |
-          if [ -s payload.json ]; then
-            CONTENT=$(python3 - <<'PY'
-          import json
-          with open("payload.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-          print(data.get("content", ""))
-          PY
-          )
+          git config user.name "Atreias-WLAN"
+          git config user.email "atreias-wlan@users.noreply.github.com"
 
-            if [ -n "$CONTENT" ]; then
-              curl -X POST \
-                -H "Content-Type: application/json" \
-                --data-binary @payload.json \
-                "${{ secrets.DISCORD_WEBHOOK_URL }}"
-            fi
-          fi
+          git add aion2_seen.json
 
-      - name: Gemeldete Nachrichten speichern
-        run: |
-          if [ -f aion2_seen.json ]; then
-            git config user.name "Atreias-WLAN"
-            git config user.email "atreias-wlan@users.noreply.github.com"
-
-            git add aion2_seen.json
-
-            if ! git diff --cached --quiet; then
-              git commit -m "AION 2 Nachrichtenstand aktualisieren"
-              git push
-            fi
+          if ! git diff --cached --quiet; then
+            git commit -m "AION 2 Nachrichtenstand aktualisieren"
+            git push
+          else
+            echo "Kein neuer Nachrichtenstand."
           fi
