@@ -3,72 +3,142 @@ name: Atreias-WLAN
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */8 * * *"
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
 
 jobs:
-  runa:
+  atreias-wlan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION 2 Meldungen abrufen
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Steam-AION-2-Nachrichten abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
-            -o aion2.html
+            "https://store.steampowered.com/feeds/news/app/3393110/?l=german&cc=DE" \
+            -o aion2.xml
 
           echo "Antwortgröße:"
-          wc -c aion2.html
+          wc -c aion2.xml
 
-      - name: Neue Meldung erkennen
+      - name: Neue Meldung erkennen und Zeitung bauen
         run: |
           python3 - <<'PY'
-          import re
           import json
+          import os
+          import re
+          import urllib.request
+          import xml.etree.ElementTree as ET
           from html import unescape
 
-          with open("aion2.html", "r", encoding="utf-8") as f:
-              raw = f.read()
+          FEED = "aion2.xml"
+          STATE = "aion2_seen.json"
+          PAYLOAD = "payload.json"
 
-          # Artikel-IDs aus der offiziellen Seite suchen
-          ids = re.findall(r'articleId[=:]["\']?([0-9a-fA-F]{24})', raw)
-
-          # Doppelte IDs entfernen, Reihenfolge behalten
-          ids = list(dict.fromkeys(ids))
-
-          if ids:
-              article_id = ids[0]
-
-              link = (
-                  "https://aion2.plaync.com/en-us/board/notice/view"
-                  f"?articleId={article_id}"
-              )
-
-              message = (
-                  "📡 **Ätherstrom – AION 2**\n\n"
-                  "Eine offizielle AION-2-Meldung wurde erkannt.\n\n"
-                  f"🔗 {link}"
-              )
+          # Bereits gemeldete Steam-News laden
+          if os.path.exists(STATE):
+              with open(STATE, "r", encoding="utf-8") as f:
+                  seen = set(json.load(f))
           else:
-              message = (
-                  "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die offizielle AION-2-Seite wurde erreicht, "
-                  "aber aktuell keine Artikel-ID erkannt."
-              )
+              seen = set()
 
-          with open("payload.json", "w", encoding="utf-8") as f:
+          # RSS lesen
+          root = ET.parse(FEED).getroot()
+
+          items = root.findall(".//item")
+
+          # Neueste Meldungen zuerst
+          new_items = []
+
+          for item in items:
+              title = item.findtext("title", "").strip()
+              link = item.findtext("link", "").strip()
+              guid = item.findtext("guid", "").strip()
+
+              if not guid:
+                  guid = link
+
+              if not title or not link or not guid:
+                  continue
+
+              if guid in seen:
+                  continue
+
+              new_items.append({
+                  "title": title,
+                  "link": link,
+                  "guid": guid
+              })
+
+          # Falls nichts Neues vorhanden ist, nichts an Discord senden
+          if not new_items:
+              print("Keine neue AION-2-Meldung.")
+              with open(PAYLOAD, "w", encoding="utf-8") as f:
+                  json.dump({"content": ""}, f, ensure_ascii=False)
+
+              raise SystemExit(0)
+
+          # Nur die neueste Meldung veröffentlichen
+          item = new_items[0]
+
+          message = (
+              "📡 **Ätherstrom – AION 2**\n\n"
+              f"📰 **{item['title']}**\n\n"
+              f"🔗 {item['link']}"
+          )
+
+          with open(PAYLOAD, "w", encoding="utf-8") as f:
               json.dump(
                   {"content": message},
                   f,
                   ensure_ascii=False
               )
 
+          # Alle jetzt gefundenen Meldungen als gesehen markieren
+          # Dadurch wird beim nächsten Lauf nichts doppelt gemeldet.
+          for entry in new_items:
+              seen.add(entry["guid"])
+
+          with open(STATE, "w", encoding="utf-8") as f:
+              json.dump(sorted(seen), f, ensure_ascii=False, indent=2)
+
           print(message)
           PY
 
-      - name: Nachricht an Discord senden
+      - name: Zeitung an Discord senden
         run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            --data-binary @payload.json \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          if [ -s payload.json ]; then
+            CONTENT=$(python3 - <<'PY'
+          import json
+          with open("payload.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+          print(data.get("content", ""))
+          PY
+          )
+
+            if [ -n "$CONTENT" ]; then
+              curl -X POST \
+                -H "Content-Type: application/json" \
+                --data-binary @payload.json \
+                "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            fi
+          fi
+
+      - name: Gemeldete Nachrichten speichern
+        run: |
+          if [ -f aion2_seen.json ]; then
+            git config user.name "Atreias-WLAN"
+            git config user.email "atreias-wlan@users.noreply.github.com"
+
+            git add aion2_seen.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "AION 2 Nachrichtenstand aktualisieren"
+              git push
+            fi
+          fi
