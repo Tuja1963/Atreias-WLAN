@@ -1,10 +1,10 @@
-name: Atreias-WLAN – NC Artikel lesen
+name: Atreias-WLAN – NC Antenne
 
 on:
   workflow_dispatch:
 
 jobs:
-  nc-article:
+  nc-news:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,12 +15,10 @@ jobs:
             "https://www.nc.com/newsroom/news/articles/?articleId=695dbbc84984ee2095a3cd1c&boardLanguage=en" \
             -o article.html
 
-          echo "NC-Artikel geladen:"
-          wc -c article.html
-
-      - name: Titel des NC-Artikels finden
+      - name: NC-Meldung vorbereiten
         run: |
           python3 - <<'PY'
+          import json
           import re
           from html import unescape
 
@@ -32,29 +30,50 @@ jobs:
           ) as f:
               page = f.read()
 
-          # Titel aus <title> holen
           match = re.search(
               r"<title[^>]*>(.*?)</title>",
               page,
               re.I | re.S
           )
 
-          if match:
-              title = re.sub(r"<[^>]+>", " ", match.group(1))
-              title = unescape(title)
-              title = re.sub(r"\s+", " ", title).strip()
-
-              print("NC-Titel gefunden:")
-              print(title)
-          else:
-              print("Kein Titel gefunden.")
+          if not match:
+              print("Kein NC-Titel gefunden.")
               raise SystemExit(1)
 
-          print()
-          print("NC-Artikel:")
-          print(
+          title = re.sub(
+              r"<[^>]+>",
+              " ",
+              match.group(1)
+          )
+
+          title = unescape(title)
+          title = re.sub(r"\s+", " ", title).strip()
+
+          link = (
               "https://www.nc.com/newsroom/news/articles/"
               "?articleId=695dbbc84984ee2095a3cd1c"
               "&boardLanguage=en"
           )
+
+          message = (
+              "📡 **Ätherstrom – AION 2**\n\n"
+              f"📰 **{title}**\n\n"
+              f"🔗 {link}"
+          )
+
+          with open("payload.json", "w", encoding="utf-8") as f:
+              json.dump(
+                  {"content": message},
+                  f,
+                  ensure_ascii=False
+              )
+
+          print(message)
           PY
+
+      - name: NC-Meldung an Discord senden
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
