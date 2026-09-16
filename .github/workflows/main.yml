@@ -14,10 +14,10 @@ jobs:
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list" \
+            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o aion2.html
 
-      - name: Erste Meldung erkennen
+      - name: AION 2 Meldung erkennen
         run: |
           python3 - <<'PY'
           import re
@@ -27,33 +27,32 @@ jobs:
           with open("aion2.html", "r", encoding="utf-8") as f:
               html = f.read()
 
-          match = re.search(
-              r'href="([^"]*/board/notice/view\?articleId=([^"&]+)[^"]*)"[^>]*>(.*?)</a>',
-              html,
-              re.S
-          )
+          pattern = r'articleId=([0-9a-f]+)'
+          matches = re.findall(pattern, html, re.I)
 
-          if match:
-              link = unescape(match.group(1))
-              article_id = match.group(2)
+          if matches:
+              article_id = matches[0]
 
-              title = re.sub(r"<[^>]+>", " ", match.group(3))
-              title = re.sub(r"\s+", " ", title).strip()
+              link = (
+                  "https://aion2.plaync.com/en-us/board/notice/view"
+                  f"?articleId={article_id}"
+              )
 
               message = (
-                  "📡 **AION 2 – Atreias-WLAN**\n\n"
-                  f"**{title}**\n\n"
-                  f"Artikel-ID: {article_id}\n"
-                  f"{link}"
+                  "📡 **Ätherstrom – AION 2**\n\n"
+                  "Eine neue bzw. aktuelle AION-2-Meldung wurde gefunden.\n\n"
+                  f"🔗 {link}"
               )
           else:
               message = (
-                  "📡 **AION 2 – Atreias-WLAN**\n\n"
-                  "Keine AION-2-Meldung gefunden."
+                  "📡 **Ätherstrom – AION 2**\n\n"
+                  "Die AION-2-Seite wurde erreicht, "
+                  "aber in der gelieferten Seite wurde noch keine "
+                  "Artikel-ID gefunden."
               )
 
           payload = {
-              "content": message[:1800]
+              "content": message
           }
 
           with open("payload.json", "w", encoding="utf-8") as f:
