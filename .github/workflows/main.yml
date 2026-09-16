@@ -1,25 +1,77 @@
+```yaml
 name: Atreias-WLAN
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 */8 * * *"
 
 jobs:
   runa:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AION 2 Quelle untersuchen
+      - name: Offizielle AION 2 Seite abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list" \
             -o aion2.html
 
-          echo "===== GEFUNDENE API-HINWEISE ====="
-          grep -oE 'https?[^" ]+api[^" ]+' aion2.html | head -20 || true
+      - name: Neueste Meldung ermitteln
+        run: |
+          python3 - <<'PY'
+          import re
+          import json
+          from html import unescape
 
-          echo "===== GEFUNDENE ARTICLE IDS ====="
-          grep -oE 'articleId[^,}" ]*[:=][^,}" ]*' aion2.html | head -20 || true
+          with open("aion2.html", "r", encoding="utf-8") as f:
+              html = f.read()
 
-          echo "===== DATEIGRÖSSE ====="
-          wc -c aion2.html
+          # Nach Artikel-IDs suchen, die auf der offiziellen
+          # AION-2-Seite eingebettet sind.
+          ids = re.findall(
+              r'articleId["\']?\s*[:=]\s*["\']?([0-9]+)',
+              html,
+              re.I
+          )
+
+          # Doppelte IDs entfernen, Reihenfolge behalten.
+          ids = list(dict.fromkeys(ids))
+
+          if ids:
+              article_id = ids[0]
+
+              link = (
+                  "https://aion2.plaync.com/en-us/board/notice/view"
+                  f"?articleId={article_id}"
+              )
+
+              message = (
+                  "📡 **Ätherstrom – AION 2**\n\n"
+                  "Eine offizielle AION-2-Meldung wurde gefunden.\n\n"
+                  f"🆔 Artikel-ID: `{article_id}`\n"
+                  f"🔗 {link}"
+              )
+          else:
+              message = (
+                  "📡 **Ätherstrom – AION 2**\n\n"
+                  "Die offizielle AION-2-Seite wurde erreicht, "
+                  "aber es konnte noch keine Artikel-ID ausgelesen werden."
+              )
+
+          with open("payload.json", "w", encoding="utf-8") as f:
+              json.dump(
+                  {"content": message[:1800]},
+                  f,
+                  ensure_ascii=False
+              )
+          PY
+
+      - name: Nachricht an Discord senden
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+```
