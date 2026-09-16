@@ -1,230 +1,60 @@
-name: Atreias-WLAN
+name: Atreias-WLAN – NC Artikel lesen
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"
-
-permissions:
-  contents: write
 
 jobs:
-  atreias-wlan:
+  nc-article:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repository laden
-        uses: actions/checkout@v4
-
-      - name: Steam-AION-2-Nachrichten abrufen
+      - name: Offiziellen NC-AION-2-Artikel abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://store.steampowered.com/feeds/news/app/3393110/?l=german&cc=DE" \
-            -o aion2.xml
+            "https://www.nc.com/newsroom/news/articles/?articleId=695dbbc84984ee2095a3cd1c&boardLanguage=en" \
+            -o article.html
 
-      - name: Offizielle NC-AION-2-Seite abrufen
-        run: |
-          curl -L \
-            -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
-            -o nc.html
+          echo "NC-Artikel geladen:"
+          wc -c article.html
 
-          echo "NC-Seite geladen:"
-          wc -c nc.html
-
-      - name: Meldungen aus beiden Quellen prüfen
+      - name: Titel des NC-Artikels finden
         run: |
           python3 - <<'PY'
-          import json
-          import os
           import re
-          import xml.etree.ElementTree as ET
           from html import unescape
 
-          STATE = "aion2_seen.json"
-          PAYLOAD = "payload.json"
+          with open(
+              "article.html",
+              "r",
+              encoding="utf-8",
+              errors="ignore"
+          ) as f:
+              page = f.read()
 
-          if os.path.exists(STATE):
-              with open(STATE, "r", encoding="utf-8") as f:
-                  seen = set(json.load(f))
+          # Titel aus <title> holen
+          match = re.search(
+              r"<title[^>]*>(.*?)</title>",
+              page,
+              re.I | re.S
+          )
+
+          if match:
+              title = re.sub(r"<[^>]+>", " ", match.group(1))
+              title = unescape(title)
+              title = re.sub(r"\s+", " ", title).strip()
+
+              print("NC-Titel gefunden:")
+              print(title)
           else:
-              seen = set()
+              print("Kein Titel gefunden.")
+              raise SystemExit(1)
 
-          messages = []
-
-          # -------------------------
-          # STEAM
-          # -------------------------
-          try:
-              root = ET.parse("aion2.xml").getroot()
-
-              for item in root.findall(".//item"):
-                  title = item.findtext("title", "").strip()
-                  link = item.findtext("link", "").strip()
-                  guid = item.findtext("guid", "").strip() or link
-
-                  if not title or not link or not guid:
-                      continue
-
-                  if guid in seen:
-                      continue
-
-                  messages.append({
-                      "source": "Steam",
-                      "title": title,
-                      "link": link,
-                      "id": guid
-                  })
-
-          except Exception as e:
-              print("Steam konnte nicht gelesen werden:", e)
-
-          # -------------------------
-          # OFFIZIELLE NC-SEITE
-          # -------------------------
-          try:
-              with open(
-                  "nc.html",
-                  "r",
-                  encoding="utf-8",
-                  errors="ignore"
-              ) as f:
-                  page = f.read()
-
-              # Die Seite kann die Artikel als JSON/HTML enthalten.
-              # Wir suchen gezielt nach view?articleId=...
-              patterns = [
-                  r'view\?articleId=([A-Za-z0-9_-]+)',
-                  r'articleId["\']?\s*[:=]\s*["\']([A-Za-z0-9_-]+)',
-                  r'"articleId"\s*:\s*"([A-Za-z0-9_-]+)'
-              ]
-
-              article_ids = []
-
-              for pattern in patterns:
-                  for article_id in re.findall(
-                      pattern,
-                      page,
-                      re.I
-                  ):
-                      if article_id not in article_ids:
-                          article_ids.append(article_id)
-
-              print(
-                  "Gefundene NC-Artikel:",
-                  len(article_ids)
-              )
-
-              # Die NC-Seite selbst enthält die aktuellsten
-              # Meldungen. Für den ersten stabilen Betrieb
-              # merken wir die Artikel-ID als eindeutige Kennung.
-              for article_id in article_ids[:20]:
-
-                  article_url = (
-                      "https://aion2.plaync.com/"
-                      "en-us/board/notice/view?"
-                      f"articleId={article_id}"
-                  )
-
-                  if article_url in seen:
-                      continue
-
-                  messages.append({
-                      "source": "NC",
-                      "title": "Neue offizielle AION-2-Ankündigung",
-                      "link": article_url,
-                      "id": article_url
-                  })
-
-          except Exception as e:
-              print("NC konnte nicht gelesen werden:", e)
-
-          # -------------------------
-          # ERGEBNIS
-          # -------------------------
-
-          if not messages:
-              print("Keine neue AION-2-Meldung.")
-              with open(PAYLOAD, "w", encoding="utf-8") as f:
-                  json.dump(
-                      {"content": ""},
-                      f,
-                      ensure_ascii=False
-                  )
-
-              with open(STATE, "w", encoding="utf-8") as f:
-                  json.dump(
-                      sorted(seen),
-                      f,
-                      ensure_ascii=False,
-                      indent=2
-                  )
-
-              raise SystemExit(0)
-
-          # Nur die erste neue Meldung senden
-          item = messages[0]
-
-          message = (
-              "📡 **Ätherstrom – AION 2**\n\n"
-              f"📰 **{item['title']}**\n\n"
-              f"🔗 {item['link']}"
+          print()
+          print("NC-Artikel:")
+          print(
+              "https://www.nc.com/newsroom/news/articles/"
+              "?articleId=695dbbc84984ee2095a3cd1c"
+              "&boardLanguage=en"
           )
-
-          with open(PAYLOAD, "w", encoding="utf-8") as f:
-              json.dump(
-                  {"content": message},
-                  f,
-                  ensure_ascii=False
-              )
-
-          # Alle bereits erkannten Meldungen merken
-          for item in messages:
-              seen.add(item["id"])
-
-          with open(STATE, "w", encoding="utf-8") as f:
-              json.dump(
-                  sorted(seen),
-                  f,
-                  ensure_ascii=False,
-                  indent=2
-              )
-
-          print(message)
           PY
-
-      - name: Zeitung an Discord senden
-        run: |
-          if [ -f payload.json ]; then
-
-            CONTENT=$(python3 - <<'PY'
-          import json
-
-          with open("payload.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          print(data.get("content", ""))
-          PY
-          )
-
-            if [ -n "$CONTENT" ]; then
-              curl -X POST \
-                -H "Content-Type: application/json" \
-                --data-binary @payload.json \
-                "${{ secrets.DISCORD_WEBHOOK_URL }}"
-            fi
-
-          fi
-
-      - name: Gelesene Meldungen speichern
-        run: |
-          git config user.name "Atreias-WLAN"
-          git config user.email "actions@github.com"
-
-          git add aion2_seen.json
-
-          git diff --cached --quiet || \
-            git commit -m "Atreias-WLAN: Meldungen aktualisieren"
-
-          git push
