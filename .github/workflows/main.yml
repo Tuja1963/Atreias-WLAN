@@ -1,21 +1,21 @@
-name: Atreias-WLAN – NC Datenquelle untersuchen
+name: Atreias-WLAN – NC API finden
 
 on:
   workflow_dispatch:
 
 jobs:
-  nc-source:
+  nc-api:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION-2-Seite laden
+      - name: AION-2-Seite laden
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-      - name: JavaScript-Dateien herunterladen und untersuchen
+      - name: Echte API-Adresse finden
         run: |
           python3 - <<'PY'
           import re
@@ -33,19 +33,9 @@ jobs:
 
           scripts = list(dict.fromkeys(scripts))
 
-          print(f"JavaScript-Dateien gefunden: {len(scripts)}")
+          print(f"JS-Dateien: {len(scripts)}")
 
-          keywords = [
-              "api-search",
-              "api",
-              "board",
-              "articleId",
-              "article",
-              "notice",
-              "createBoard"
-          ]
-
-          found = set()
+          api_urls = set()
 
           for src in scripts:
               url = urljoin(
@@ -53,52 +43,44 @@ jobs:
                   src
               )
 
-              print(f"Untersuche: {url}")
-
               try:
                   req = urllib.request.Request(
                       url,
                       headers={"User-Agent": "Mozilla/5.0"}
                   )
 
-                  with urllib.request.urlopen(req, timeout=20) as response:
-                      js = response.read().decode(
-                          "utf-8",
-                          errors="ignore"
-                      )
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      js = r.read().decode("utf-8", errors="ignore")
 
-                  for keyword in keywords:
-                      if keyword.lower() in js.lower():
-                          found.add(keyword)
+                  # Alle URLs mit API-Bezug herausziehen
+                  matches = re.findall(
+                      r'https?://[^"\'\s<>]+',
+                      js
+                  )
 
-                          print(
-                              f"  -> gefunden: {keyword}"
-                          )
+                  for match in matches:
+                      clean = match.rstrip("\\),;")
+                      low = clean.lower()
 
-                          # Zeige kurze Ausschnitte rund um den Treffer
-                          pattern = re.compile(
-                              re.escape(keyword),
-                              re.I
-                          )
+                      if (
+                          "api" in low
+                          or "article" in low
+                          or "board" in low
+                      ):
+                          api_urls.add(clean)
 
-                          for match in list(pattern.finditer(js))[:3]:
-                              start = max(0, match.start() - 180)
-                              end = min(
-                                  len(js),
-                                  match.end() + 300
-                              )
-
-                              print(
-                                  js[start:end]
-                                  .replace("\n", " ")
-                              )
-
-              except Exception as e:
-                  print(f"  -> konnte nicht gelesen werden: {e}")
+              except Exception:
+                  pass
 
           print()
-          print("================================")
-          print("Gefundene relevante Begriffe:")
-          print(", ".join(sorted(found)) or "keine")
-          print("================================")
+          print("========== GEFUNDENE KANDIDATEN ==========")
+
+          for url in sorted(api_urls):
+              print(url)
+
+          print("==========================================")
+
+          if not api_urls:
+              print("KEIN API-ENDPUNKT GEFUNDEN")
+              raise SystemExit(1)
           PY
