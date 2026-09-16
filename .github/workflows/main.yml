@@ -2,6 +2,13 @@ name: Atreias-WLAN
 
 on:
   workflow_dispatch:
+    inputs:
+      test_message:
+        description: "Testnachricht für den Ätherstrom"
+        required: false
+        default: ""
+        type: string
+
   schedule:
     - cron: "*/30 * * * *"
 
@@ -42,7 +49,9 @@ jobs:
             "https://www.nc.com/newsroom/news/?boardLanguage=en" \
             -o newsroom.html
 
-      - name: Neue Meldungen erkennen
+      - name: Meldung vorbereiten
+        env:
+          TEST_MESSAGE: ${{ inputs.test_message }}
         run: |
           python3 - <<'PY'
           import json
@@ -52,6 +61,25 @@ jobs:
 
           STATE = "aion2_seen.json"
           PAYLOAD = "payload.json"
+
+          test_message = os.environ.get("TEST_MESSAGE", "").strip()
+
+          # MANUELLER TEST
+          if test_message:
+              message = (
+                  "📡 **Ätherstrom – TEST**\n\n"
+                  f"{test_message}"
+              )
+
+              with open(PAYLOAD, "w", encoding="utf-8") as f:
+                  json.dump(
+                      {"content": message},
+                      f,
+                      ensure_ascii=False
+                  )
+
+              print(message)
+              raise SystemExit(0)
 
           if os.path.exists(STATE):
               with open(STATE, "r", encoding="utf-8") as f:
