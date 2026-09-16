@@ -1,40 +1,80 @@
-name: Atreias-WLAN – NC Test
+name: Atreias-WLAN – NC News
 
 on:
   workflow_dispatch:
 
 jobs:
-  nc-test:
+  nc-news:
     runs-on: ubuntu-latest
 
     steps:
-      - name: NC-Daten abrufen
+      - name: Offizielle NC-News abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
+            "https://www.nc.com/newsroom/news/articles/?boardLanguage=en" \
             -o nc.html
 
-          echo "Antwort:"
+          echo "Antwortgröße:"
           wc -c nc.html
 
-      - name: Artikel-Links suchen
+      - name: AION-2-Meldungen finden
         run: |
           python3 - <<'PY'
           import re
+          import html
 
           with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              html = f.read()
+              page = f.read()
 
-          links = re.findall(
-              r'https?://aion2\.plaync\.com[^"\'<>\s]+',
-              html
+          # Links und zugehörigen Text aus dem offiziellen Newsroom suchen
+          matches = re.findall(
+              r'href=["\']([^"\']*articleId[^"\']*)["\'][^>]*>(.*?)</a>',
+              page,
+              re.I | re.S
           )
 
-          links = list(dict.fromkeys(links))
+          found = []
 
-          print(f"Gefundene AION-2-Links: {len(links)}")
+          for link, title in matches:
+              title = re.sub(r"<[^>]+>", " ", title)
+              title = html.unescape(title)
+              title = re.sub(r"\s+", " ", title).strip()
 
-          for link in links[:20]:
-              print(link)
+              if not title:
+                  continue
+
+              if link.startswith("/"):
+                  link = "https://www.nc.com" + link
+
+              # Nur AION-2-relevante Treffer
+              text = title.lower()
+
+              if "aion" not in text:
+                  continue
+
+              found.append((title, link))
+
+          # Doppelte Links entfernen
+          unique = []
+          seen = set()
+
+          for title, link in found:
+              if link in seen:
+                  continue
+
+              seen.add(link)
+              unique.append((title, link))
+
+          if not unique:
+              echo = "Keine AION-Meldung im NC-Newsroom gefunden."
+              print(echo)
+              raise SystemExit(1)
+
+          print("Gefundene AION-Meldungen:")
+
+          for title, link in unique[:10]:
+              print()
+              print("Titel:", title)
+              print("Link:", link)
           PY
