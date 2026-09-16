@@ -8,22 +8,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION-2-News abrufen
+      - name: NC-Daten abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "NC-Seite abgerufen."
-          echo "Größe der Antwort:"
+          echo "Antwort:"
           wc -c nc.html
 
-      - name: Ergebnis prüfen
+      - name: Artikel-Links suchen
         run: |
-          if grep -qi "Announcements" nc.html; then
-            echo "NC-Ankündigungsseite wurde erreicht."
-          else
-            echo "NC-Seite erreicht, aber Ankündigungsbereich nicht gefunden."
-            exit 1
-          fi
+          python3 - <<'PY'
+          import re
+
+          with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
+              html = f.read()
+
+          links = re.findall(
+              r'https?://aion2\.plaync\.com[^"\'<>\s]+',
+              html
+          )
+
+          links = list(dict.fromkeys(links))
+
+          print(f"Gefundene AION-2-Links: {len(links)}")
+
+          for link in links[:20]:
+              print(link)
+          PY
