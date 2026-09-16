@@ -15,26 +15,93 @@ jobs:
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "Antwort:"
-          wc -c nc.html
-
-      - name: Artikel-Links suchen
+      - name: NC-Meldung finden
         run: |
           python3 - <<'PY'
           import re
+          import html
 
           with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              html = f.read()
+              text = f.read()
 
-          links = re.findall(
-              r'https?://aion2\.plaync\.com[^"\'<>\s]+',
-              html
+          # Artikel-URLs und sichtbare Titel suchen
+          matches = re.findall(
+              r'href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+              text,
+              re.I | re.S
           )
 
-          links = list(dict.fromkeys(links))
+          found = []
 
-          print(f"Gefundene AION-2-Links: {len(links)}")
+          for link, title in matches:
+              title = re.sub(r"<[^>]+>", " ", title)
+              title = html.unescape(title)
+              title = re.sub(r"\s+", " ", title).strip()
 
-          for link in links[:20]:
-              print(link)
+              if not title:
+                  continue
+
+              if link.startswith("/"):
+                  link = "https://aion2.plaync.com" + link
+
+              if "aion2.plaync.com" not in link:
+                  continue
+
+              found.append((title, link))
+
+          # Doppelte entfernen
+          unique = []
+          seen = set()
+
+          for title, link in found:
+              if link in seen:
+                  continue
+              seen.add(link)
+              unique.append((title, link))
+
+          if not unique:
+              print("Keine Artikel gefunden.")
+              raise SystemExit(1)
+
+          title, link = unique[0]
+
+          print("ERSTE NC-MELDUNG:")
+          print("Titel:", title)
+          print("Link:", link)
+
+          with open("nc_message.txt", "w", encoding="utf-8") as f:
+              f.write(
+                  "📡 **Ätherstrom – AION 2 / NC**\n\n"
+                  f"📰 **{title}**\n\n"
+                  f"🔗 {link}"
+              )
+          PY
+
+      - name: NC-Meldung an Discord senden
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with open("nc_message.txt", "r", encoding="utf-8") as f:
+              message = f.read()
+
+          data = json.dumps({
+              "content": message
+          }).encode("utf-8")
+
+          request = urllib.request.Request(
+              os.environ["DISCORD_WEBHOOK_URL"],
+              data=data,
+              headers={
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print("Discord:", response.status)
           PY
