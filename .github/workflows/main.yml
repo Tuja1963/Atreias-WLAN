@@ -1,155 +1,29 @@
-name: Atreias-WLAN – NC News
+name: Atreias-WLAN – NC Test
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"
-
-permissions:
-  contents: write
 
 jobs:
-  nc-news:
+  nc-test:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repository laden
-        uses: actions/checkout@v4
-
-      - name: Offizielle AION-2-NC-News abrufen
+      - name: Offizielle AION-2-News abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/" \
+            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "Antwortgröße:"
+          echo "NC-Seite abgerufen."
+          echo "Größe der Antwort:"
           wc -c nc.html
 
-      - name: Neue NC-Meldung erkennen
+      - name: Ergebnis prüfen
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-
-          STATE = "nc_seen.json"
-          PAYLOAD = "nc_payload.json"
-
-          if os.path.exists(STATE):
-              with open(STATE, "r", encoding="utf-8") as f:
-                  seen = set(json.load(f))
-          else:
-              seen = set()
-
-          with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              html = f.read()
-
-          # Artikel-Links der offiziellen AION-2-Seite suchen
-          patterns = [
-              r'href="([^"]*?/board/notice/[^"]+)"[^>]*>(.*?)</a>',
-              r'href="([^"]*?/conts/[^"]+)"[^>]*>(.*?)</a>',
-          ]
-
-          found = []
-
-          for pattern in patterns:
-              for match in re.findall(pattern, html, re.I | re.S):
-                  link, title = match
-                  title = re.sub(r"<[^>]+>", " ", title)
-                  title = re.sub(r"\s+", " ", title).strip()
-
-                  if not title or not link:
-                      continue
-
-                  if link.startswith("/"):
-                      link = "https://aion2.plaync.com" + link
-
-                  if not link.startswith("https://aion2.plaync.com"):
-                      continue
-
-                  if link in seen:
-                      continue
-
-                  found.append({
-                      "title": title,
-                      "link": link
-                  })
-
-          # Doppelte Treffer entfernen
-          unique = []
-          links = set()
-
-          for item in found:
-              if item["link"] in links:
-                  continue
-              links.add(item["link"])
-              unique.append(item)
-
-          if not unique:
-              print("Keine neue NC-Meldung gefunden.")
-
-              with open(PAYLOAD, "w", encoding="utf-8") as f:
-                  json.dump({"content": ""}, f, ensure_ascii=False)
-
-              raise SystemExit(0)
-
-          # Nur die erste neue Meldung verwenden
-          item = unique[0]
-
-          message = (
-              "📡 **Ätherstrom – AION 2 / NC**\n\n"
-              f"📰 **{item['title']}**\n\n"
-              f"🔗 {item['link']}"
-          )
-
-          with open(PAYLOAD, "w", encoding="utf-8") as f:
-              json.dump(
-                  {"content": message},
-                  f,
-                  ensure_ascii=False
-              )
-
-          # Nur die tatsächlich verwendete Meldung merken
-          seen.add(item["link"])
-
-          with open(STATE, "w", encoding="utf-8") as f:
-              json.dump(sorted(seen), f, ensure_ascii=False, indent=2)
-
-          print(message)
-          PY
-
-      - name: NC-Meldung an Discord senden
-        run: |
-          if [ -s nc_payload.json ]; then
-            CONTENT=$(python3 - <<'PY'
-          import json
-
-          with open("nc_payload.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          print(data.get("content", ""))
-          PY
-          )
-
-            if [ -n "$CONTENT" ]; then
-              curl -X POST \
-                -H "Content-Type: application/json" \
-                --data-binary @nc_payload.json \
-                "${{ secrets.DISCORD_WEBHOOK_URL }}"
-            fi
-          fi
-
-      - name: NC-Nachrichtenstand speichern
-        run: |
-          git config user.name "Atreias-WLAN"
-          git config user.email "atreias-wlan@users.noreply.github.com"
-
-          git add nc_seen.json
-
-          if ! git diff --cached --quiet; then
-            git commit -m "NC Nachrichtenstand aktualisieren"
-            git push
+          if grep -qi "Announcements" nc.html; then
+            echo "NC-Ankündigungsseite wurde erreicht."
           else
-            echo "Kein neuer NC-Nachrichtenstand."
+            echo "NC-Seite erreicht, aber Ankündigungsbereich nicht gefunden."
+            exit 1
           fi
