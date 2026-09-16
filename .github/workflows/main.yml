@@ -1,52 +1,45 @@
-name: Atreias-WLAN – NC Antenne
+name: Atreias-WLAN – NC Datenquelle finden
 
 on:
   workflow_dispatch:
 
 jobs:
-  nc-news:
+  nc-source:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION-2-Ankündigungen abrufen
+      - name: Offizielle AION-2-Seite laden
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "NC-Seite abgerufen."
+          echo "NC-Seite geladen."
           wc -c nc.html
 
-      - name: AION-2-Meldungen auslesen
+      - name: JavaScript-Dateien der Seite finden
         run: |
           python3 - <<'PY'
           import re
-          from html import unescape
+          from urllib.parse import urljoin
 
           with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              page = f.read()
+              html = f.read()
 
-          # Artikel-IDs aus der offiziellen AION-2-Seite suchen
-          ids = re.findall(
-              r'articleId[=/:"\']+([0-9]+)',
-              page,
+          scripts = re.findall(
+              r'<script[^>]+src=["\']([^"\']+)["\']',
+              html,
               re.I
           )
 
-          ids = list(dict.fromkeys(ids))
+          scripts = list(dict.fromkeys(scripts))
 
-          print(f"Gefundene Artikel-IDs: {len(ids)}")
+          print(f"Gefundene JavaScript-Dateien: {len(scripts)}")
 
-          if not ids:
-              print("Keine Artikel-ID gefunden.")
-              raise SystemExit(1)
-
-          for article_id in ids[:20]:
-              print(
-                  "https://aion2.plaync.com/en-us/board/notice/"
-                  + article_id
-              )
-
-          print("NC-Antenne konnte die offiziellen Artikel erkennen.")
+          for src in scripts:
+              print(urljoin(
+                  "https://aion2.plaync.com/en-us/board/notice/",
+                  src
+              ))
           PY
