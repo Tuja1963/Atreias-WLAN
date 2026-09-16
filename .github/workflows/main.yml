@@ -59,11 +59,7 @@ jobs:
                           if text:
                               title = text
 
-                      if article_id is None and k in (
-                          "articleid",
-                          "article_id",
-                          "articleid"
-                      ):
+                      if article_id is None and k in ("articleid", "article_id"):
                           text = clean(value)
                           if text:
                               article_id = text
