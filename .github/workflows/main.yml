@@ -17,42 +17,43 @@ jobs:
             "https://aion2.plaync.com/en-us/board/notice/list" \
             -o aion2.html
 
-      - name: Nachricht vorbereiten
+      - name: Erste Meldung erkennen
         run: |
           python3 - <<'PY'
-          from html.parser import HTMLParser
           import re
           import json
-
-          class TextParser(HTMLParser):
-              def __init__(self):
-                  super().__init__()
-                  self.parts = []
-
-              def handle_data(self, data):
-                  text = re.sub(r"\s+", " ", data).strip()
-                  if text:
-                      self.parts.append(text)
-
-          parser = TextParser()
+          from html import unescape
 
           with open("aion2.html", "r", encoding="utf-8") as f:
-              parser.feed(f.read())
+              html = f.read()
 
-          lines = []
-          for text in parser.parts:
-              if text not in lines:
-                  lines.append(text)
+          match = re.search(
+              r'href="([^"]*/board/notice/view\?articleId=([^"&]+)[^"]*)"[^>]*>(.*?)</a>',
+              html,
+              re.S
+          )
 
-          message = "\n".join(lines[:20])
+          if match:
+              link = unescape(match.group(1))
+              article_id = match.group(2)
 
-          if not message:
-              message = "Atreias-WLAN hat die AION-2-Seite erreicht, aber noch keinen Nachrichtentext gefunden."
+              title = re.sub(r"<[^>]+>", " ", match.group(3))
+              title = re.sub(r"\s+", " ", title).strip()
 
-          message = message[:1800]
+              message = (
+                  "📡 **AION 2 – Atreias-WLAN**\n\n"
+                  f"**{title}**\n\n"
+                  f"Artikel-ID: {article_id}\n"
+                  f"{link}"
+              )
+          else:
+              message = (
+                  "📡 **AION 2 – Atreias-WLAN**\n\n"
+                  "Keine AION-2-Meldung gefunden."
+              )
 
           payload = {
-              "content": "📡 **AION 2 – Atreias-WLAN**\n\n" + message
+              "content": message[:1800]
           }
 
           with open("payload.json", "w", encoding="utf-8") as f:
