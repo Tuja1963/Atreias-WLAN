@@ -10,14 +10,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION 2 Meldungen abrufen
+      - name: Offizielle AION 2 Quelle abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://api-search.plaync.com/aion2/notice" \
             -o aion2.json
 
-      - name: Neueste Meldung vorbereiten
+          echo "Antwortgröße:"
+          wc -c aion2.json
+
+      - name: Antwort auswerten
         run: |
           python3 - <<'PY'
           import json
@@ -25,42 +28,15 @@ jobs:
           from html import unescape
 
           with open("aion2.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+              raw = f.read()
 
-          print("API-Antwort erhalten.")
+          print("Erste 2000 Zeichen der Antwort:")
+          print(raw[:2000])
 
-          # Die API-Struktur kann sich ändern.
-          # Deshalb suchen wir rekursiv nach den wichtigsten Feldern.
-          def find_values(obj, names):
-              found = []
-
-              if isinstance(obj, dict):
-                  for key, value in obj.items():
-                      if key.lower() in names:
-                          found.append((key, value))
-                      found.extend(find_values(value, names))
-
-              elif isinstance(obj, list):
-                  for item in obj:
-                      found.extend(find_values(item, names))
-
-              return found
-
-          ids = find_values(data, {
-              "articleid",
-              "article_id",
-              "id"
-          })
-
-          titles = find_values(data, {
-              "title",
-              "subject"
-          })
-
-          links = find_values(data, {
-              "url",
-              "link"
-          })
+          try:
+              data = json.loads(raw)
+          except Exception:
+              data = None
 
           def clean(value):
               value = unescape(str(value))
@@ -68,45 +44,56 @@ jobs:
               value = re.sub(r"\s+", " ", value)
               return value.strip()
 
-          article_id = None
-          for _, value in ids:
-              text = clean(value)
-              if text:
-                  article_id = text
-                  break
-
           title = None
-          for _, value in titles:
-              text = clean(value)
-              if text:
-                  title = text
-                  break
+          article_id = None
 
-          link = None
-          for _, value in links:
-              text = clean(value)
-              if text.startswith("http"):
-                  link = text
-                  break
+          def walk(obj):
+              global title, article_id
 
-          if article_id and not link:
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      k = key.lower()
+
+                      if title is None and k in ("title", "subject", "article_title"):
+                          text = clean(value)
+                          if text:
+                              title = text
+
+                      if article_id is None and k in (
+                          "articleid",
+                          "article_id",
+                          "articleid"
+                      ):
+                          text = clean(value)
+                          if text:
+                              article_id = text
+
+                      walk(value)
+
+              elif isinstance(obj, list):
+                  for item in obj:
+                      walk(item)
+
+          if data is not None:
+              walk(data)
+
+          if article_id:
               link = (
                   "https://aion2.plaync.com/en-us/board/notice/view"
                   f"?articleId={article_id}"
               )
 
-          if article_id:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
                   f"**{title or 'Offizielle AION-2-Meldung'}**\n\n"
                   f"🆔 Artikel-ID: `{article_id}`\n"
-                  f"🔗 {link or 'https://aion2.plaync.com/en-us/board/notice/list'}"
+                  f"🔗 {link}"
               )
           else:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die offizielle Quelle wurde erreicht, "
-                  "aber es konnte keine Meldung aus der Antwort gelesen werden."
+                  "Die Quelle antwortet, aber die erwarteten "
+                  "AION-2-Artikeldaten wurden nicht gefunden."
               )
 
           with open("payload.json", "w", encoding="utf-8") as f:
