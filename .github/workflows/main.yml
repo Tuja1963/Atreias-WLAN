@@ -1,4 +1,4 @@
-nname: Atreias-WLAN
+name: Atreias-WLAN
 
 on:
   workflow_dispatch:
