@@ -10,70 +10,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION 2 Quelle abrufen
+      - name: Offizielle AION 2 Meldungen abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://api-search.plaync.com/aion2/notice" \
-            -o aion2.json
+            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
+            -o aion2.html
 
           echo "Antwortgröße:"
-          wc -c aion2.json
+          wc -c aion2.html
 
-      - name: Antwort auswerten
+      - name: Neue Meldung erkennen
         run: |
           python3 - <<'PY'
-          import json
           import re
+          import json
           from html import unescape
 
-          with open("aion2.json", "r", encoding="utf-8") as f:
+          with open("aion2.html", "r", encoding="utf-8") as f:
               raw = f.read()
 
-          print("Erste 2000 Zeichen der Antwort:")
-          print(raw[:2000])
+          # Artikel-IDs aus der offiziellen Seite suchen
+          ids = re.findall(r'articleId[=:]["\']?([0-9a-fA-F]{24})', raw)
 
-          try:
-              data = json.loads(raw)
-          except Exception:
-              data = None
+          # Doppelte IDs entfernen, Reihenfolge behalten
+          ids = list(dict.fromkeys(ids))
 
-          def clean(value):
-              value = unescape(str(value))
-              value = re.sub(r"<[^>]+>", " ", value)
-              value = re.sub(r"\s+", " ", value)
-              return value.strip()
+          if ids:
+              article_id = ids[0]
 
-          title = None
-          article_id = None
-
-          def walk(obj):
-              global title, article_id
-
-              if isinstance(obj, dict):
-                  for key, value in obj.items():
-                      k = key.lower()
-
-                      if title is None and k in ("title", "subject", "article_title"):
-                          text = clean(value)
-                          if text:
-                              title = text
-
-                      if article_id is None and k in ("articleid", "article_id"):
-                          text = clean(value)
-                          if text:
-                              article_id = text
-
-                      walk(value)
-
-              elif isinstance(obj, list):
-                  for item in obj:
-                      walk(item)
-
-          if data is not None:
-              walk(data)
-
-          if article_id:
               link = (
                   "https://aion2.plaync.com/en-us/board/notice/view"
                   f"?articleId={article_id}"
@@ -81,20 +46,19 @@ jobs:
 
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  f"**{title or 'Offizielle AION-2-Meldung'}**\n\n"
-                  f"🆔 Artikel-ID: `{article_id}`\n"
+                  "Eine offizielle AION-2-Meldung wurde erkannt.\n\n"
                   f"🔗 {link}"
               )
           else:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die Quelle antwortet, aber die erwarteten "
-                  "AION-2-Artikeldaten wurden nicht gefunden."
+                  "Die offizielle AION-2-Seite wurde erreicht, "
+                  "aber aktuell keine Artikel-ID erkannt."
               )
 
           with open("payload.json", "w", encoding="utf-8") as f:
               json.dump(
-                  {"content": message[:1800]},
+                  {"content": message},
                   f,
                   ensure_ascii=False
               )
