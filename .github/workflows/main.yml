@@ -1,4 +1,3 @@
-```yaml
 name: Atreias-WLAN
 
 on:
@@ -11,53 +10,103 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Offizielle AION 2 Seite abrufen
+      - name: Offizielle AION 2 Meldungen abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list" \
-            -o aion2.html
+            "https://api-search.plaync.com/aion2/notice" \
+            -o aion2.json
 
-      - name: Neueste Meldung ermitteln
+      - name: Neueste Meldung vorbereiten
         run: |
           python3 - <<'PY'
-          import re
           import json
+          import re
           from html import unescape
 
-          with open("aion2.html", "r", encoding="utf-8") as f:
-              html = f.read()
+          with open("aion2.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
 
-          # Nach Artikel-IDs suchen, die auf der offiziellen
-          # AION-2-Seite eingebettet sind.
-          ids = re.findall(
-              r'articleId["\']?\s*[:=]\s*["\']?([0-9]+)',
-              html,
-              re.I
-          )
+          print("API-Antwort erhalten.")
 
-          # Doppelte IDs entfernen, Reihenfolge behalten.
-          ids = list(dict.fromkeys(ids))
+          # Die API-Struktur kann sich ändern.
+          # Deshalb suchen wir rekursiv nach den wichtigsten Feldern.
+          def find_values(obj, names):
+              found = []
 
-          if ids:
-              article_id = ids[0]
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      if key.lower() in names:
+                          found.append((key, value))
+                      found.extend(find_values(value, names))
 
+              elif isinstance(obj, list):
+                  for item in obj:
+                      found.extend(find_values(item, names))
+
+              return found
+
+          ids = find_values(data, {
+              "articleid",
+              "article_id",
+              "id"
+          })
+
+          titles = find_values(data, {
+              "title",
+              "subject"
+          })
+
+          links = find_values(data, {
+              "url",
+              "link"
+          })
+
+          def clean(value):
+              value = unescape(str(value))
+              value = re.sub(r"<[^>]+>", " ", value)
+              value = re.sub(r"\s+", " ", value)
+              return value.strip()
+
+          article_id = None
+          for _, value in ids:
+              text = clean(value)
+              if text:
+                  article_id = text
+                  break
+
+          title = None
+          for _, value in titles:
+              text = clean(value)
+              if text:
+                  title = text
+                  break
+
+          link = None
+          for _, value in links:
+              text = clean(value)
+              if text.startswith("http"):
+                  link = text
+                  break
+
+          if article_id and not link:
               link = (
                   "https://aion2.plaync.com/en-us/board/notice/view"
                   f"?articleId={article_id}"
               )
 
+          if article_id:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Eine offizielle AION-2-Meldung wurde gefunden.\n\n"
+                  f"**{title or 'Offizielle AION-2-Meldung'}**\n\n"
                   f"🆔 Artikel-ID: `{article_id}`\n"
-                  f"🔗 {link}"
+                  f"🔗 {link or 'https://aion2.plaync.com/en-us/board/notice/list'}"
               )
           else:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die offizielle AION-2-Seite wurde erreicht, "
-                  "aber es konnte noch keine Artikel-ID ausgelesen werden."
+                  "Die offizielle Quelle wurde erreicht, "
+                  "aber es konnte keine Meldung aus der Antwort gelesen werden."
               )
 
           with open("payload.json", "w", encoding="utf-8") as f:
@@ -66,6 +115,8 @@ jobs:
                   f,
                   ensure_ascii=False
               )
+
+          print(message)
           PY
 
       - name: Nachricht an Discord senden
@@ -74,4 +125,3 @@ jobs:
             -H "Content-Type: application/json" \
             --data-binary @payload.json \
             "${{ secrets.DISCORD_WEBHOOK_URL }}"
-```
