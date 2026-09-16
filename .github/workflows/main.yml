@@ -10,14 +10,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AION 2 Seite abrufen
+      - name: AION 2 Quelle abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
+            "https://lounge.plaync.com/feed/49979" \
             -o aion2.html
 
-      - name: AION 2 Meldung erkennen
+      - name: Meldung vorbereiten
         run: |
           python3 - <<'PY'
           import re
@@ -27,11 +27,26 @@ jobs:
           with open("aion2.html", "r", encoding="utf-8") as f:
               html = f.read()
 
-          pattern = r'articleId=([0-9a-f]+)'
-          matches = re.findall(pattern, html, re.I)
+          title_match = re.search(
+              r"<title[^>]*>(.*?)</title>",
+              html,
+              re.S | re.I
+          )
 
-          if matches:
-              article_id = matches[0]
+          if title_match:
+              title = re.sub(r"<[^>]+>", " ", title_match.group(1))
+              title = unescape(title)
+              title = re.sub(r"\s+", " ", title).strip()
+          else:
+              title = "AION 2 – offizieller Beitrag"
+
+          article_match = re.search(
+              r"articleId=([0-9a-fA-F]+)",
+              html
+          )
+
+          if article_match:
+              article_id = article_match.group(1)
 
               link = (
                   "https://aion2.plaync.com/en-us/board/notice/view"
@@ -40,19 +55,18 @@ jobs:
 
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Eine neue bzw. aktuelle AION-2-Meldung wurde gefunden.\n\n"
+                  f"**{title}**\n\n"
                   f"🔗 {link}"
               )
           else:
               message = (
                   "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die AION-2-Seite wurde erreicht, "
-                  "aber in der gelieferten Seite wurde noch keine "
-                  "Artikel-ID gefunden."
+                  "Die offizielle AION-2-Quelle wurde erreicht, "
+                  "aber es wurde noch keine Artikel-ID gefunden."
               )
 
           payload = {
-              "content": message
+              "content": message[:1800]
           }
 
           with open("payload.json", "w", encoding="utf-8") as f:
