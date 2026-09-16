@@ -1,4 +1,4 @@
-name: Atreias-WLAN – NC Datenquelle finden
+name: Atreias-WLAN – NC Datenquelle untersuchen
 
 on:
   workflow_dispatch:
@@ -15,31 +15,90 @@ jobs:
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-          echo "NC-Seite geladen."
-          wc -c nc.html
-
-      - name: JavaScript-Dateien der Seite finden
+      - name: JavaScript-Dateien herunterladen und untersuchen
         run: |
           python3 - <<'PY'
           import re
+          import urllib.request
           from urllib.parse import urljoin
 
           with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              html = f.read()
+              page = f.read()
 
           scripts = re.findall(
               r'<script[^>]+src=["\']([^"\']+)["\']',
-              html,
+              page,
               re.I
           )
 
           scripts = list(dict.fromkeys(scripts))
 
-          print(f"Gefundene JavaScript-Dateien: {len(scripts)}")
+          print(f"JavaScript-Dateien gefunden: {len(scripts)}")
+
+          keywords = [
+              "api-search",
+              "api",
+              "board",
+              "articleId",
+              "article",
+              "notice",
+              "createBoard"
+          ]
+
+          found = set()
 
           for src in scripts:
-              print(urljoin(
+              url = urljoin(
                   "https://aion2.plaync.com/en-us/board/notice/",
                   src
-              ))
+              )
+
+              print(f"Untersuche: {url}")
+
+              try:
+                  req = urllib.request.Request(
+                      url,
+                      headers={"User-Agent": "Mozilla/5.0"}
+                  )
+
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      js = response.read().decode(
+                          "utf-8",
+                          errors="ignore"
+                      )
+
+                  for keyword in keywords:
+                      if keyword.lower() in js.lower():
+                          found.add(keyword)
+
+                          print(
+                              f"  -> gefunden: {keyword}"
+                          )
+
+                          # Zeige kurze Ausschnitte rund um den Treffer
+                          pattern = re.compile(
+                              re.escape(keyword),
+                              re.I
+                          )
+
+                          for match in list(pattern.finditer(js))[:3]:
+                              start = max(0, match.start() - 180)
+                              end = min(
+                                  len(js),
+                                  match.end() + 300
+                              )
+
+                              print(
+                                  js[start:end]
+                                  .replace("\n", " ")
+                              )
+
+              except Exception as e:
+                  print(f"  -> konnte nicht gelesen werden: {e}")
+
+          print()
+          print("================================")
+          print("Gefundene relevante Begriffe:")
+          print(", ".join(sorted(found)) or "keine")
+          print("================================")
           PY
