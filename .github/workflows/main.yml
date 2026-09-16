@@ -1,5 +1,3 @@
-
-  
 name: Atreias-WLAN
 
 on:
@@ -12,21 +10,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AION 2 Nachrichten abrufen
+      - name: AION 2 Seite abrufen
         run: |
           curl -L \
-            -H "User-Agent: Mozilla/5.0" \
+            -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list" \
             -o aion2.html
 
-      - name: Nachricht an Discord senden
+      - name: Nachricht vorbereiten
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
           import re
           import json
-          import os
-          import urllib.request
 
           class TextParser(HTMLParser):
               def __init__(self):
@@ -34,7 +30,7 @@ jobs:
                   self.parts = []
 
               def handle_data(self, data):
-                  text = data.strip()
+                  text = re.sub(r"\s+", " ", data).strip()
                   if text:
                       self.parts.append(text)
 
@@ -45,28 +41,27 @@ jobs:
 
           lines = []
           for text in parser.parts:
-              text = re.sub(r"\s+", " ", text).strip()
-              if text and text not in lines:
+              if text not in lines:
                   lines.append(text)
 
           message = "\n".join(lines[:20])
 
           if not message:
-              message = "📡 Atreias-WLAN hat die AION-2-Seite erreicht, konnte aber noch keinen Nachrichtentext auslesen."
+              message = "Atreias-WLAN hat die AION-2-Seite erreicht, aber noch keinen Nachrichtentext gefunden."
 
-          payload = json.dumps({
-              "content": "📡 **Neue AION-2-Informationen**\n\n" + message
-          }).encode("utf-8")
+          message = message[:1800]
 
-          request = urllib.request.Request(
-              os.environ["DISCORD_WEBHOOK_URL"],
-              data=payload,
-              headers={"Content-Type": "application/json"},
-              method="POST"
-          )
+          payload = {
+              "content": "📡 **AION 2 – Atreias-WLAN**\n\n" + message
+          }
 
-          with urllib.request.urlopen(request) as response:
-              print("Discord:", response.status)
+          with open("payload.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f, ensure_ascii=False)
           PY
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Nachricht an Discord senden
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
