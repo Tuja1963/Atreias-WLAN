@@ -2,80 +2,24 @@ name: Atreias-WLAN
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 */8 * * *"
 
 jobs:
   runa:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AION 2 Quelle abrufen
+      - name: AION 2 Quelle untersuchen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
-            "https://lounge.plaync.com/feed/49979" \
+            "https://aion2.plaync.com/en-us/board/notice/list" \
             -o aion2.html
 
-      - name: Meldung vorbereiten
-        run: |
-          python3 - <<'PY'
-          import re
-          import json
-          from html import unescape
+          echo "===== GEFUNDENE API-HINWEISE ====="
+          grep -oE 'https?[^" ]+api[^" ]+' aion2.html | head -20 || true
 
-          with open("aion2.html", "r", encoding="utf-8") as f:
-              html = f.read()
+          echo "===== GEFUNDENE ARTICLE IDS ====="
+          grep -oE 'articleId[^,}" ]*[:=][^,}" ]*' aion2.html | head -20 || true
 
-          title_match = re.search(
-              r"<title[^>]*>(.*?)</title>",
-              html,
-              re.S | re.I
-          )
-
-          if title_match:
-              title = re.sub(r"<[^>]+>", " ", title_match.group(1))
-              title = unescape(title)
-              title = re.sub(r"\s+", " ", title).strip()
-          else:
-              title = "AION 2 – offizieller Beitrag"
-
-          article_match = re.search(
-              r"articleId=([0-9a-fA-F]+)",
-              html
-          )
-
-          if article_match:
-              article_id = article_match.group(1)
-
-              link = (
-                  "https://aion2.plaync.com/en-us/board/notice/view"
-                  f"?articleId={article_id}"
-              )
-
-              message = (
-                  "📡 **Ätherstrom – AION 2**\n\n"
-                  f"**{title}**\n\n"
-                  f"🔗 {link}"
-              )
-          else:
-              message = (
-                  "📡 **Ätherstrom – AION 2**\n\n"
-                  "Die offizielle AION-2-Quelle wurde erreicht, "
-                  "aber es wurde noch keine Artikel-ID gefunden."
-              )
-
-          payload = {
-              "content": message[:1800]
-          }
-
-          with open("payload.json", "w", encoding="utf-8") as f:
-              json.dump(payload, f, ensure_ascii=False)
-          PY
-
-      - name: Nachricht an Discord senden
-        run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            --data-binary @payload.json \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+          echo "===== DATEIGRÖSSE ====="
+          wc -c aion2.html
