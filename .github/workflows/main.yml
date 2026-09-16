@@ -1,86 +1,230 @@
-name: Atreias-WLAN – NC API finden
+name: Atreias-WLAN
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
 
 jobs:
-  nc-api:
+  atreias-wlan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: AION-2-Seite laden
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Steam-AION-2-Nachrichten abrufen
+        run: |
+          curl -L \
+            -A "Mozilla/5.0" \
+            "https://store.steampowered.com/feeds/news/app/3393110/?l=german&cc=DE" \
+            -o aion2.xml
+
+      - name: Offizielle NC-AION-2-Seite abrufen
         run: |
           curl -L \
             -A "Mozilla/5.0" \
             "https://aion2.plaync.com/en-us/board/notice/list?redirect=false" \
             -o nc.html
 
-      - name: Echte API-Adresse finden
+          echo "NC-Seite geladen:"
+          wc -c nc.html
+
+      - name: Meldungen aus beiden Quellen prüfen
         run: |
           python3 - <<'PY'
+          import json
+          import os
           import re
-          import urllib.request
-          from urllib.parse import urljoin
+          import xml.etree.ElementTree as ET
+          from html import unescape
 
-          with open("nc.html", "r", encoding="utf-8", errors="ignore") as f:
-              page = f.read()
+          STATE = "aion2_seen.json"
+          PAYLOAD = "payload.json"
 
-          scripts = re.findall(
-              r'<script[^>]+src=["\']([^"\']+)["\']',
-              page,
-              re.I
-          )
+          if os.path.exists(STATE):
+              with open(STATE, "r", encoding="utf-8") as f:
+                  seen = set(json.load(f))
+          else:
+              seen = set()
 
-          scripts = list(dict.fromkeys(scripts))
+          messages = []
 
-          print(f"JS-Dateien: {len(scripts)}")
+          # -------------------------
+          # STEAM
+          # -------------------------
+          try:
+              root = ET.parse("aion2.xml").getroot()
 
-          api_urls = set()
+              for item in root.findall(".//item"):
+                  title = item.findtext("title", "").strip()
+                  link = item.findtext("link", "").strip()
+                  guid = item.findtext("guid", "").strip() or link
 
-          for src in scripts:
-              url = urljoin(
-                  "https://aion2.plaync.com/en-us/board/notice/",
-                  src
+                  if not title or not link or not guid:
+                      continue
+
+                  if guid in seen:
+                      continue
+
+                  messages.append({
+                      "source": "Steam",
+                      "title": title,
+                      "link": link,
+                      "id": guid
+                  })
+
+          except Exception as e:
+              print("Steam konnte nicht gelesen werden:", e)
+
+          # -------------------------
+          # OFFIZIELLE NC-SEITE
+          # -------------------------
+          try:
+              with open(
+                  "nc.html",
+                  "r",
+                  encoding="utf-8",
+                  errors="ignore"
+              ) as f:
+                  page = f.read()
+
+              # Die Seite kann die Artikel als JSON/HTML enthalten.
+              # Wir suchen gezielt nach view?articleId=...
+              patterns = [
+                  r'view\?articleId=([A-Za-z0-9_-]+)',
+                  r'articleId["\']?\s*[:=]\s*["\']([A-Za-z0-9_-]+)',
+                  r'"articleId"\s*:\s*"([A-Za-z0-9_-]+)'
+              ]
+
+              article_ids = []
+
+              for pattern in patterns:
+                  for article_id in re.findall(
+                      pattern,
+                      page,
+                      re.I
+                  ):
+                      if article_id not in article_ids:
+                          article_ids.append(article_id)
+
+              print(
+                  "Gefundene NC-Artikel:",
+                  len(article_ids)
               )
 
-              try:
-                  req = urllib.request.Request(
-                      url,
-                      headers={"User-Agent": "Mozilla/5.0"}
+              # Die NC-Seite selbst enthält die aktuellsten
+              # Meldungen. Für den ersten stabilen Betrieb
+              # merken wir die Artikel-ID als eindeutige Kennung.
+              for article_id in article_ids[:20]:
+
+                  article_url = (
+                      "https://aion2.plaync.com/"
+                      "en-us/board/notice/view?"
+                      f"articleId={article_id}"
                   )
 
-                  with urllib.request.urlopen(req, timeout=20) as r:
-                      js = r.read().decode("utf-8", errors="ignore")
+                  if article_url in seen:
+                      continue
 
-                  # Alle URLs mit API-Bezug herausziehen
-                  matches = re.findall(
-                      r'https?://[^"\'\s<>]+',
-                      js
+                  messages.append({
+                      "source": "NC",
+                      "title": "Neue offizielle AION-2-Ankündigung",
+                      "link": article_url,
+                      "id": article_url
+                  })
+
+          except Exception as e:
+              print("NC konnte nicht gelesen werden:", e)
+
+          # -------------------------
+          # ERGEBNIS
+          # -------------------------
+
+          if not messages:
+              print("Keine neue AION-2-Meldung.")
+              with open(PAYLOAD, "w", encoding="utf-8") as f:
+                  json.dump(
+                      {"content": ""},
+                      f,
+                      ensure_ascii=False
                   )
 
-                  for match in matches:
-                      clean = match.rstrip("\\),;")
-                      low = clean.lower()
+              with open(STATE, "w", encoding="utf-8") as f:
+                  json.dump(
+                      sorted(seen),
+                      f,
+                      ensure_ascii=False,
+                      indent=2
+                  )
 
-                      if (
-                          "api" in low
-                          or "article" in low
-                          or "board" in low
-                      ):
-                          api_urls.add(clean)
+              raise SystemExit(0)
 
-              except Exception:
-                  pass
+          # Nur die erste neue Meldung senden
+          item = messages[0]
 
-          print()
-          print("========== GEFUNDENE KANDIDATEN ==========")
+          message = (
+              "📡 **Ätherstrom – AION 2**\n\n"
+              f"📰 **{item['title']}**\n\n"
+              f"🔗 {item['link']}"
+          )
 
-          for url in sorted(api_urls):
-              print(url)
+          with open(PAYLOAD, "w", encoding="utf-8") as f:
+              json.dump(
+                  {"content": message},
+                  f,
+                  ensure_ascii=False
+              )
 
-          print("==========================================")
+          # Alle bereits erkannten Meldungen merken
+          for item in messages:
+              seen.add(item["id"])
 
-          if not api_urls:
-              print("KEIN API-ENDPUNKT GEFUNDEN")
-              raise SystemExit(1)
+          with open(STATE, "w", encoding="utf-8") as f:
+              json.dump(
+                  sorted(seen),
+                  f,
+                  ensure_ascii=False,
+                  indent=2
+              )
+
+          print(message)
           PY
+
+      - name: Zeitung an Discord senden
+        run: |
+          if [ -f payload.json ]; then
+
+            CONTENT=$(python3 - <<'PY'
+          import json
+
+          with open("payload.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          print(data.get("content", ""))
+          PY
+          )
+
+            if [ -n "$CONTENT" ]; then
+              curl -X POST \
+                -H "Content-Type: application/json" \
+                --data-binary @payload.json \
+                "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            fi
+
+          fi
+
+      - name: Gelesene Meldungen speichern
+        run: |
+          git config user.name "Atreias-WLAN"
+          git config user.email "actions@github.com"
+
+          git add aion2_seen.json
+
+          git diff --cached --quiet || \
+            git commit -m "Atreias-WLAN: Meldungen aktualisieren"
+
+          git push
